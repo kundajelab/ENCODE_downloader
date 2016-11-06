@@ -21,7 +21,7 @@ parser.add_argument('assay_category', metavar='assay-category', type=str, \
 parser.add_argument('assay_title', metavar='assay-title', type=str, \
                         help='Assay title (e.g. ATAC-seq)')
 parser.add_argument('scientific_name', metavar='scientific-name', type=str, \
-                        help='Scientific name for genome (e.g. Mus+musculus, Homo-sapiens)')
+                        help='Scientific name for genome (e.g. Mus+musculus, Homo+sapiens)')
 parser.add_argument('--ignored-accession-ids-file', type=str, \
                         help='Accession IDs in this text file will be ignored. (1 acc. ID per line)')
 parser.add_argument('--max-download', type=int, default=8, \
