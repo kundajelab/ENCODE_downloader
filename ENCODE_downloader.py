@@ -28,7 +28,7 @@ parser.add_argument('--max-download', type=int, default=8, \
                         help='Maximum number of fastqs for concurrent downloading')
 parser.add_argument('--ref-genome', type=str, default='${REF_GENOME}', \
                         help='Reference genome name for pipeline (e.g. hg38_ENCODE3, mm10_ENCODE3, hg19, mm9)')
-parser.add_argument('--num-thread-pipeline', type=int, default='${NTH_PIPELINE}', \
+parser.add_argument('--num-thread-pipeline', type=str, default='${NTH_PIPELINE}', \
                         help='Number of thread for each pipeline')
 parser.add_argument('--dir-pipeline-run', type=str, default='${DIR_PIPELINE_RUN}', \
                         help='Root directory of outputs for pipeline')
@@ -171,7 +171,8 @@ for line in search_data.split('\n'):
             
             param_award = '-' + args.award_rfa # -ENCODE3
             cmd_pipeline += 'bds_scr $TITLE %s -nth %d %s -url_base %s -title $TITLE -species %s %s\n' \
-                            % (args.bds_pipeline_script, args.num_thread_pipeline, param_award, args.web_url_base, \
+                            % (args.bds_pipeline_script, args.num_thread_pipeline, param_award, \
+                                args.web_url_base+'/'+mid_slash+'/'+accession_id+'/out', \
                                 args.ref_genome, param_pipeline)
             cmd_pipeline += 'sleep 1\n\n'
             #print cmd_pipeline
@@ -179,6 +180,10 @@ for line in search_data.split('\n'):
 
 """
 python2 ENCODE_downloader.py /srv/scratch/shared/surya/leepc12/data ENCODE3 DNA+accessibility ATAC-seq Homo+sapiens \
---ref-genome hg38_ENCODE3 --bds-pipeline-script '${PIPELINE_CODE}/atac_dnase_pipelines/atac.bds' --num-thread-pipeline 3 \
+--ref-genome hg38_ENCODE3 --bds-pipeline-script '${DIR_PIPELINE_CODE}/atac_dnase_pipelines/atac.bds' --num-thread-pipeline 3 \
+--web-url-base http://mitra.stanford.edu/kundaje --ignored-accession-ids-file ignored_accession_ids.txt
+
+python2 ENCODE_downloader.py /srv/scratch/shared/surya/leepc12/data ENCODE3 DNA+accessibility ATAC-seq Mus+musculus \
+--ref-genome mm10_ENCODE3 --bds-pipeline-script '${DIR_PIPELINE_CODE}/atac_dnase_pipelines/atac.bds' --num-thread-pipeline 3 \
 --web-url-base http://mitra.stanford.edu/kundaje --ignored-accession-ids-file ignored_accession_ids.txt
 """
