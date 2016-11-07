@@ -123,9 +123,9 @@ for line in search_data.split('\n'):
                 # download fastq
                 print 'Downloading: %s, rep:%d, pair:%d' % (url_fastq, bio_rep_id, pair)
                 cmd_wget = 'wget -bqcN -P %s %s' % (dir,url_fastq)
-                #os.system(cmd_wget)
+                os.system(cmd_wget)
                 # wait for 0.25 second per fastq
-                #time.sleep(0.25)
+                time.sleep(0.25)
 
                 # check if paired with other fastq                
                 paired_with = None
