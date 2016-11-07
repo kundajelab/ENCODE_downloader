@@ -63,7 +63,7 @@ file_pipeline.write('WEB_URL_BASE='+args.web_url_base+'\n\n')
 
 # loaded ignored accession list
 ignored_accession_ids = []
-if os.path.isfile(args.ignored_accession_ids_file):
+if args.ignored_accession_ids_file and os.path.isfile(args.ignored_accession_ids_file):
     ignored_accession_ids = open(args.ignored_accession_ids_file,'r').read().splitlines()
 print 'ignored_accession_ids:\n', ignored_accession_ids
 
@@ -170,7 +170,7 @@ for line in search_data.split('\n'):
                 already_done.append(rel_fastq)
             
             param_award = '-' + args.award_rfa # -ENCODE3
-            cmd_pipeline += 'bds_scr $TITLE %s -nth %d %s -url_base %s -title $TITLE -species %s %s\n' \
+            cmd_pipeline += 'bds_scr $TITLE %s -nth %s %s -url_base %s -title $TITLE -species %s %s\n' \
                             % (args.bds_pipeline_script, args.num_thread_pipeline, param_award, \
                                 args.web_url_base+'/'+mid_slash+'/'+accession_id+'/out', \
                                 args.ref_genome, param_pipeline)
