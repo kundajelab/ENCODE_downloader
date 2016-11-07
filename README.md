@@ -55,3 +55,19 @@ optional arguments:
                         URL base for the ENCODE portal (e.g.
                         https://www.encodeproject.org
 ```
+
+# Examples
+
+ENCODE3 DNA+accessibility ATAC-seq Homo+sapiens
+```
+python2 ENCODE_downloader.py /srv/scratch/shared/surya/leepc12/data ENCODE3 DNA+accessibility ATAC-seq Homo+sapiens \
+--ref-genome hg38_ENCODE3 --bds-pipeline-script '${DIR_PIPELINE_CODE}/atac_dnase_pipelines/atac.bds' --num-thread-pipeline 3 \
+--web-url-base http://mitra.stanford.edu/kundaje --ignored-accession-ids-file ignored_accession_ids.txt
+```
+
+ENCODE3 DNA+accessibility ATAC-seq Mus+musculus
+```
+python2 ENCODE_downloader.py /srv/scratch/shared/surya/leepc12/data ENCODE3 DNA+accessibility ATAC-seq Mus+musculus \
+--ref-genome mm10_ENCODE3 --bds-pipeline-script '${DIR_PIPELINE_CODE}/atac_dnase_pipelines/atac.bds' --num-thread-pipeline 3 \
+--web-url-base http://mitra.stanford.edu/kundaje --ignored-accession-ids-file ignored_accession_ids.txt
+```

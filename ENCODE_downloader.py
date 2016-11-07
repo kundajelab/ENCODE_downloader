@@ -8,10 +8,7 @@ import re
 import argparse
 
 parser = argparse.ArgumentParser(prog='ENCODE fastq downloader', \
-                                    description='Download fastqs from the ENCODE portal.', \
-                                    epilog='python2 ENCODE_downloader.py '+ \
-                                            '/path/download ENCODE3 DNA+accessibility '+ \
-                                            'ATAC-seq Homo-sapiens --ref-genome hg38_ENCODE3')
+                                    description='Download fastqs from the ENCODE portal.')
 parser.add_argument('dir_download', metavar='dir-download', type=str, \
                         help='Root directory to save downloaded fastqs')
 parser.add_argument('award_rfa', metavar='award-rfa', type=str, \
@@ -177,13 +174,3 @@ for line in search_data.split('\n'):
             cmd_pipeline += 'sleep 1\n\n'
             #print cmd_pipeline
             file_pipeline.write(cmd_pipeline)
-
-"""
-python2 ENCODE_downloader.py /srv/scratch/shared/surya/leepc12/data ENCODE3 DNA+accessibility ATAC-seq Homo+sapiens \
---ref-genome hg38_ENCODE3 --bds-pipeline-script '${DIR_PIPELINE_CODE}/atac_dnase_pipelines/atac.bds' --num-thread-pipeline 3 \
---web-url-base http://mitra.stanford.edu/kundaje --ignored-accession-ids-file ignored_accession_ids.txt
-
-python2 ENCODE_downloader.py /srv/scratch/shared/surya/leepc12/data ENCODE3 DNA+accessibility ATAC-seq Mus+musculus \
---ref-genome mm10_ENCODE3 --bds-pipeline-script '${DIR_PIPELINE_CODE}/atac_dnase_pipelines/atac.bds' --num-thread-pipeline 3 \
---web-url-base http://mitra.stanford.edu/kundaje --ignored-accession-ids-file ignored_accession_ids.txt
-"""
