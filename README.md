@@ -7,14 +7,51 @@ For the downloaded fastqs, it also creates a bash script to run genomic pipeline
 # Usage
 
 ```
-ENCODE fastq downloader by Jin Lee (leepc12@gmail.com), Nov. 2016
+usage: ENCODE fastq downloader [-h]
+                               [--ignored-accession-ids-file IGNORED_ACCESSION_IDS_FILE]
+                               [--max-download MAX_DOWNLOAD]
+                               [--ref-genome REF_GENOME]
+                               [--num-thread-pipeline NUM_THREAD_PIPELINE]
+                               [--dir-pipeline-run DIR_PIPELINE_RUN]
+                               [--dir-pipeline-data DIR_PIPELINE_DATA]
+                               [--bds-pipeline-script BDS_PIPELINE_SCRIPT]
+                               [--web-url-base WEB_URL_BASE]
+                               [--encode-url-base ENCODE_URL_BASE]
+                               dir-download award-rfa assay-category
+                               assay-title scientific-name
 
-Usage:
-    python2 ENCODE_downloader.py [DIR_DOWNLOAD] [AWARD_RFA] [ASSAY_CATEGORY] [ASSAY_TITLE] [SCIENTIFIC_NAME] [REF_GENOME: optional]
-Example:
-    python2 ENCODE_downloader.py /scratch/data/mouse ENCODE3 DNA+accessibility ATAC-seq Mus+musculus mm10_ENCODE
-    python2 ENCODE_downloader.py /scratch/data/human ENCODE3 DNA+accessibility ATAC-seq Homo+sapiens hg38_ENCODE
+Download fastqs from the ENCODE portal.
 
-Do not use a space (' ') in parameters, use '+' instead.
-[REF_GENOME] is optional for generating shell scripts to run BDS pipelines (using bds_scr).
+positional arguments:
+  dir-download          Root directory to save downloaded fastqs
+  award-rfa             Award RFA (e.g. ENCODE3)
+  assay-category        Assay category (e.g. DNA+accessibility)
+  assay-title           Assay title (e.g. ATAC-seq)
+  scientific-name       Scientific name for genome (e.g. Mus+musculus,
+                        Homo+sapiens)
+
+optional arguments:
+  -h, --help            show this help message and exit
+  --ignored-accession-ids-file IGNORED_ACCESSION_IDS_FILE
+                        Accession IDs in this text file will be ignored. (1
+                        acc. ID per line)
+  --max-download MAX_DOWNLOAD
+                        Maximum number of fastqs for concurrent downloading
+  --ref-genome REF_GENOME
+                        Reference genome name for pipeline (e.g. hg38_ENCODE3,
+                        mm10_ENCODE3, hg19, mm9)
+  --num-thread-pipeline NUM_THREAD_PIPELINE
+                        Number of thread for each pipeline
+  --dir-pipeline-run DIR_PIPELINE_RUN
+                        Root directory of outputs for pipeline
+  --dir-pipeline-data DIR_PIPELINE_DATA
+                        Root directory of data for pipeline
+  --bds-pipeline-script BDS_PIPELINE_SCRIPT
+                        BDS pipeline script (e.g. /path/to/atac.bds)
+  --web-url-base WEB_URL_BASE
+                        URL base for browser tracks (e.g.
+                        http://mitra.stanford.edu/kundaje
+  --encode-url-base ENCODE_URL_BASE
+                        URL base for the ENCODE portal (e.g.
+                        https://www.encodeproject.org
 ```
