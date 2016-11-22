@@ -43,6 +43,13 @@ args = parser.parse_args()
 mid_underscore = args.award_rfa+'_'+args.assay_category+'_'+args.assay_title+'_'+args.scientific_name
 mid_slash = args.award_rfa+'/'+args.assay_category+'/'+args.assay_title+'/'+args.scientific_name
 
+# loaded ignored accession list
+ignored_accession_ids = []
+if args.ignored_accession_ids_file and os.path.isfile(args.ignored_accession_ids_file):
+    ignored_accession_ids = open(args.ignored_accession_ids_file,'r').read().splitlines()
+print '* ignored_accession_ids:'
+print [accession_id for accession_id in ignored_accession_ids if accession_id and not accession_id.startswith("#") ]
+
 # init shell script for pipeline
 if os.path.exists(args.dir_pipeline_run):
     file_pipeline = open(args.dir_pipeline_run+'/run_pipelines_'+mid_underscore+'.sh','w')
@@ -57,120 +64,120 @@ file_pipeline.write('# path for pipeline script (atac.bds, chipseq.bds ...)\n')
 file_pipeline.write('BDS_PIPELINE_SCRIPT='+args.bds_pipeline_script+'\n')
 file_pipeline.write('# URL base for genome browser tracks\n')
 file_pipeline.write('WEB_URL_BASE='+args.web_url_base+'\n\n')
-
-# loaded ignored accession list
-ignored_accession_ids = []
-if args.ignored_accession_ids_file and os.path.isfile(args.ignored_accession_ids_file):
-    ignored_accession_ids = open(args.ignored_accession_ids_file,'r').read().splitlines()
-print 'ignored_accession_ids:\n', ignored_accession_ids
-
+    
 # send query to ENCODE portal and parse
-encode_search_url = args.encode_url_base+'/search/?type=Experiment' \
+encode_search_url = args.encode_url_base+'/search/?format=json' \
+                    +'&type=Experiment' \
                     +'&limit=all' \
                     +'&assay_slims='+args.assay_category \
                     +'&assay_title='+args.assay_title \
                     +'&award.rfa='+args.award_rfa \
                     +'&replicates.library.biosample.donor.organism.scientific_name='+args.scientific_name
-print(encode_search_url)
-search_data = urllib2.urlopen(encode_search_url).read()
-for line in search_data.split('\n'):
-    if line.startswith('{'):
-        json_data_search = json.loads(line)     
-        cnt_accession = 0
-        for item in json_data_search['@graph']:
-            accession_id = item['accession']
-            url_suffix = item['@id']
-            # get json from ENCODE portal for accession id
-            json_data_exp=json.loads(urllib2.urlopen(args.encode_url_base+url_suffix+'?format=json').read())
-            print '===== %s =====' % (accession_id,)
-            if accession_id in ignored_accession_ids: # ignore if in the black list
-                print 'ignored'
-                continue
-            cnt_accession += 1
-            # for pipeline script
-            cmd_pipeline = '# %d\nTITLE=%s; WORKDIR=%s; mkdir -p $WORKDIR; cd $WORKDIR\n' \
-                                % (cnt_accession,accession_id,args.dir_pipeline_run+'/'+mid_slash+'/'+accession_id)
-            param_pipeline = ''
-            
-            fastqs = dict()
-            for f in json_data_exp['files']:
-                pair = int(f['paired_end']) if f.has_key('paired_end') else -1
-                if 'fastq' != f['file_type']: # ignore if not fastq
-                    continue
-                url_fastq = args.encode_url_base+f['href']
-                bio_rep_id = int(f['replicate']['biological_replicate_number'])
-                tech_rep_id = int(f['replicate']['technical_replicate_number'])
+print '* query:', encode_search_url
 
-                if tech_rep_id > 1:
-                    break;
-                # create directory for downloading
-                dir_suffix = '/'+mid_slash+'/'+accession_id+'/rep'+str(bio_rep_id)
-                if pair > 0:
-                    dir_suffix += '/pair'+str(pair)
-                dir = args.dir_download + dir_suffix
-                cmd_mkdir = 'mkdir -p %s' % (dir,)
-                os.system(cmd_mkdir)
+request = urllib2.Request(encode_search_url)
+# request.add_header('Cache-Control', 'max-age=0')
+request.add_header('User-Agent','Mozilla/5.0')
+search_data = urllib2.build_opener().open(request).read()
+# search_data = urllib2.urlopen(encode_search_url).read()
 
-                # check number of downloading fastqs
-                while int(subprocess.check_output('ps aux | grep wget | wc -l', shell=True).strip('\n')) \
-                            > args.max_download-1:
-                    print '# of downloads exceeded the limit (%d), retrying in 20 seconds...' % (args.max_download,)
-                    time.sleep(20)
+# print search_data
+json_data_search = json.loads(search_data)     
+cnt_accession = 0
+for item in json_data_search['@graph']:
+    accession_id = item['accession']
+    url_suffix = item['@id']
+    # get json from ENCODE portal for accession id
+    json_data_exp=json.loads(urllib2.urlopen(args.encode_url_base+url_suffix+'?format=json').read())
+    print '* %s' % (accession_id,)
+    if accession_id in ignored_accession_ids: # ignore if in the black list
+        print 'ignored'
+        continue
+    cnt_accession += 1
+    # for pipeline script
+    cmd_pipeline = '# %d\nTITLE=%s; WORKDIR=%s; mkdir -p $WORKDIR; cd $WORKDIR\n' \
+                        % (cnt_accession,accession_id,args.dir_pipeline_run+'/'+mid_slash+'/'+accession_id)
+    param_pipeline = ''
+    
+    fastqs = dict()
+    for f in json_data_exp['files']:
+        pair = int(f['paired_end']) if f.has_key('paired_end') else -1
+        if 'fastq' != f['file_type']: # ignore if not fastq
+            continue
+        url_fastq = args.encode_url_base+f['href']
+        bio_rep_id = int(f['replicate']['biological_replicate_number'])
+        tech_rep_id = int(f['replicate']['technical_replicate_number'])
 
-                # download fastq
-                print 'Downloading: %s, rep:%d, pair:%d' % (url_fastq, bio_rep_id, pair)
-                cmd_wget = 'wget -bqcN -P %s %s' % (dir,url_fastq)
-                os.system(cmd_wget)
-                # wait for 0.25 second per fastq
-                time.sleep(0.25)
+        if tech_rep_id > 1:
+            break;
+        # create directory for downloading
+        dir_suffix = '/'+mid_slash+'/'+accession_id+'/rep'+str(bio_rep_id)
+        if pair > 0:
+            dir_suffix += '/pair'+str(pair)
+        dir = args.dir_download + dir_suffix
+        cmd_mkdir = 'mkdir -p %s' % (dir,)
+        os.system(cmd_mkdir)
 
-                # check if paired with other fastq                
-                paired_with = None
-                if f.has_key('paired_with'):
-                    paired_with = f['paired_with'].split('/')[2]
+        # check number of downloading fastqs
+        while int(subprocess.check_output('ps aux | grep wget | wc -l', shell=True).strip('\n')) \
+                    > args.max_download-1:
+            print '# of downloads exceeded the limit (%d), retrying in 20 seconds...' % (args.max_download,)
+            time.sleep(20)
 
-                # relative path for fastq (for pipeline)
-                rel_fastq = args.dir_pipeline_data + dir_suffix +'/'+os.path.basename(url_fastq)
-                accession_id_fastq = os.path.basename(url_fastq).replace('.fastq.gz','')                
+        # download fastq
+        print 'Downloading: %s, rep:%d, pair:%d' % (url_fastq, bio_rep_id, pair)
+        cmd_wget = 'wget -bqcN -P %s %s' % (dir,url_fastq)
+        os.system(cmd_wget)
+        # wait for 0.25 second per fastq
+        time.sleep(0.25)
 
-                # store fastqs with the same bio_rep_id and pair: these fastqs will be pooled later in a pipeline                                
-                fastqs[accession_id_fastq] = (bio_rep_id, pair, paired_with, rel_fastq)
+        # check if paired with other fastq                
+        paired_with = None
+        if f.has_key('paired_with'):
+            paired_with = f['paired_with'].split('/')[2]
 
-            cnt_fastq_to_be_pooled = collections.defaultdict(int)
-            already_done = []
-            for accession_id_fastq in fastqs:
-                bio_rep_id, pair, paired_with, rel_fastq = fastqs[accession_id_fastq]
-                if rel_fastq in already_done:
-                    continue                
-                cnt_fastq_to_be_pooled[bio_rep_id] += 1
-                # suffix for fastqs to be pooled
-                param_endedness = ('-pe' if paired_with else '-se' ) + str(bio_rep_id)
-                if cnt_fastq_to_be_pooled[bio_rep_id] > 1:
-                    suffix = '_'+str(cnt_fastq_to_be_pooled[bio_rep_id])
-                    suffix2 = ':'+str(cnt_fastq_to_be_pooled[bio_rep_id])
-                    param_endedness = ''
-                else:
-                    suffix = ''
-                    suffix2 = ''
-                if paired_with:
-                    _, pair2, _, rel_fastq2 = fastqs[paired_with]
-                    cmd_pipeline += 'FASTQ%d_%d%s=%s\n' % (bio_rep_id, pair, suffix, rel_fastq)
-                    cmd_pipeline += 'FASTQ%d_%d%s=%s\n' % (bio_rep_id, pair2, suffix, rel_fastq2)
-                    param_pipeline += ' %s -fastq%d_%d%s $FASTQ%d_%d%s -fastq%d_%d%s $FASTQ%d_%d%s' \
-                                        % ( param_endedness, bio_rep_id, pair, suffix2, bio_rep_id, pair, suffix, \
-                                                       bio_rep_id, pair2, suffix2, bio_rep_id, pair2, suffix )
-                    already_done.append(rel_fastq2)
-                else:
-                    cmd_pipeline += 'FASTQ%d%s=%s\n' % (bio_rep_id, suffix, rel_fastq)
-                    param_pipeline += ' %s -fastq%d%s $FASTQ%d%s' \
-                                        % (param_endedness, bio_rep_id, suffix2, bio_rep_id, suffix)
-                already_done.append(rel_fastq)
-            
-            param_award = '-' + args.award_rfa # -ENCODE3
-            cmd_pipeline += 'bds_scr $TITLE %s -nth %s %s -url_base %s -title $TITLE -species %s %s\n' \
-                            % (args.bds_pipeline_script, args.num_thread_pipeline, param_award, \
-                                args.web_url_base+'/'+mid_slash+'/'+accession_id+'/out', \
-                                args.ref_genome, param_pipeline)
-            cmd_pipeline += 'sleep 1\n\n'
-            #print cmd_pipeline
-            file_pipeline.write(cmd_pipeline)
+        # relative path for fastq (for pipeline)
+        rel_fastq = args.dir_pipeline_data + dir_suffix +'/'+os.path.basename(url_fastq)
+        accession_id_fastq = os.path.basename(url_fastq).replace('.fastq.gz','')                
+
+        # store fastqs with the same bio_rep_id and pair: these fastqs will be pooled later in a pipeline                                
+        fastqs[accession_id_fastq] = (bio_rep_id, pair, paired_with, rel_fastq)
+
+    cnt_fastq_to_be_pooled = collections.defaultdict(int)
+    already_done = []
+    for accession_id_fastq in fastqs:
+        bio_rep_id, pair, paired_with, rel_fastq = fastqs[accession_id_fastq]
+        if rel_fastq in already_done:
+            continue                
+        cnt_fastq_to_be_pooled[bio_rep_id] += 1
+        # suffix for fastqs to be pooled
+        param_endedness = ('-pe' if paired_with else '-se' ) + str(bio_rep_id)
+        if cnt_fastq_to_be_pooled[bio_rep_id] > 1:
+            suffix = '_'+str(cnt_fastq_to_be_pooled[bio_rep_id])
+            suffix2 = ':'+str(cnt_fastq_to_be_pooled[bio_rep_id])
+            param_endedness = ''
+        else:
+            suffix = ''
+            suffix2 = ''
+        if paired_with:
+            _, pair2, _, rel_fastq2 = fastqs[paired_with]
+            cmd_pipeline += 'FASTQ%d_%d%s=%s\n' % (bio_rep_id, pair, suffix, rel_fastq)
+            cmd_pipeline += 'FASTQ%d_%d%s=%s\n' % (bio_rep_id, pair2, suffix, rel_fastq2)
+            param_pipeline += ' %s -fastq%d_%d%s $FASTQ%d_%d%s -fastq%d_%d%s $FASTQ%d_%d%s' \
+                                % ( param_endedness, bio_rep_id, pair, suffix2, bio_rep_id, pair, suffix, \
+                                               bio_rep_id, pair2, suffix2, bio_rep_id, pair2, suffix )
+            already_done.append(rel_fastq2)
+        else:
+            cmd_pipeline += 'FASTQ%d%s=%s\n' % (bio_rep_id, suffix, rel_fastq)
+            param_pipeline += ' %s -fastq%d%s $FASTQ%d%s' \
+                                % (param_endedness, bio_rep_id, suffix2, bio_rep_id, suffix)
+        already_done.append(rel_fastq)
+    
+    param_award = '-' + args.award_rfa # -ENCODE3
+    cmd_pipeline += 'bds_scr $TITLE %s -nth %s %s -url_base %s -title $TITLE -species %s %s\n' \
+                    % (args.bds_pipeline_script, args.num_thread_pipeline, param_award, \
+                        args.web_url_base+'/'+mid_slash+'/'+accession_id+'/out', \
+                        args.ref_genome, param_pipeline)
+    cmd_pipeline += 'sleep 1\n\n'
+    #print cmd_pipeline
+    file_pipeline.write(cmd_pipeline)
