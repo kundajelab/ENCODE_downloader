@@ -8,7 +8,7 @@ import re
 import argparse
 
 parser = argparse.ArgumentParser(prog='ENCODE fastq downloader', \
-                                    description='Download fastqs from the ENCODE portal.')
+                                    description='Download fastqs from the ENCODE portal and generate Kundaje lab BDS pipeline shell script for all samples.')
 parser.add_argument('dir_download', metavar='dir-download', type=str, \
                         help='Root directory to save downloaded fastqs')
 parser.add_argument('award_rfa', metavar='award-rfa', type=str, \
@@ -19,24 +19,33 @@ parser.add_argument('assay_title', metavar='assay-title', type=str, \
                         help='Assay title (e.g. ATAC-seq)')
 parser.add_argument('scientific_name', metavar='scientific-name', type=str, \
                         help='Scientific name for genome (e.g. Mus+musculus, Homo+sapiens)')
+parser.add_argument('--encode-url-base', type=str, default='https://www.encodeproject.org', \
+                        help='URL base for the ENCODE portal (e.g. https://www.encodeproject.org')
 parser.add_argument('--ignored-accession-ids-file', type=str, \
                         help='Accession IDs in this text file will be ignored. (1 acc. ID per line)')
 parser.add_argument('--max-download', type=int, default=8, \
                         help='Maximum number of fastqs for concurrent downloading')
-parser.add_argument('--ref-genome', type=str, default='${REF_GENOME}', \
-                        help='Reference genome name for pipeline (e.g. hg38_ENCODE3, mm10_ENCODE3, hg19, mm9)')
-parser.add_argument('--num-thread-pipeline', type=str, default='${NTH_PIPELINE}', \
-                        help='Number of thread for each pipeline')
-parser.add_argument('--dir-pipeline-run', type=str, default='${DIR_PIPELINE_RUN}', \
+parser.add_argument('--pipeline-num-thread', type=str, default='${PIPELINE_NTH}', \
+                        help='Number of threads for each pipeline')
+parser.add_argument('--pipeline-run-dir', type=str, default='${PIPELINE_RUN_DIR}', \
                         help='Root directory of outputs for pipeline')
-parser.add_argument('--dir-pipeline-data', type=str, default='${DIR_PIPELINE_DATA}', \
-                        help='Root directory of data for pipeline')
-parser.add_argument('--bds-pipeline-script', type=str, default='${BDS_PIPELINE_SCRIPT}', \
+parser.add_argument('--pipeline-data-dir', type=str, default='${PIPELINE_DATA_DIR}', \
+                        help='Root directory of data for pipeline (recommended to match with the first parameter [DIR_DOWNLOAD])')
+parser.add_argument('--pipeline-script', type=str, default='${PIPELINE_SCRIPT}', \
                         help='BDS pipeline script (e.g. /path/to/atac.bds)')
-parser.add_argument('--web-url-base', type=str, default='${WEB_URL_BASE}', \
+parser.add_argument('--pipeline-web-url-base', type=str, default='${PIPELINE_WEB_URL_BASE}', \
                         help='URL base for browser tracks (e.g. http://mitra.stanford.edu/kundaje')
-parser.add_argument('--encode-url-base', type=str, default='https://www.encodeproject.org', \
-                        help='URL base for the ENCODE portal (e.g. https://www.encodeproject.org')
+parser.add_argument('--pipeline-ref-genome', type=str, default='${REF_GENOME}', \
+                        help='Reference genome name for pipeline (e.g. hg38_ENCODE3, mm10_ENCODE3, hg19, mm9)')
+parser.add_argument('--pipeline-encode-lab', type=str, default='', \
+                        help='ENCODE lab for pipeline (e.g. /labs/anshul-kundaje/)')
+parser.add_argument('--pipeline-encode-award', type=str, default='', \
+                        help='ENCODE award for pipeline (e.g. /awards/U41HG007000/)')
+parser.add_argument('--pipeline-encode-assembly', type=str, default='', \
+                        help='ENCODE assembly (ref. genome name in ENCODE database) for pipeline (e.g. hg38 (x), GRCh38 (o)')
+parser.add_argument('--pipeline-encode-alias-prefix', type=str, default='', \
+                        help='ENCODE alias prefix for pipeline (pipeline output files will have aliases of [prefix].[filename], lab name is recommended, e.g. anshul-kundaje)')
+
 args = parser.parse_args()
 
 # commonly used string
@@ -51,19 +60,22 @@ print '* ignored_accession_ids:'
 print [accession_id for accession_id in ignored_accession_ids if accession_id and not accession_id.startswith("#") ]
 
 # init shell script for pipeline
-if os.path.exists(args.dir_pipeline_run):
-    file_pipeline = open(args.dir_pipeline_run+'/run_pipelines_'+mid_underscore+'.sh','w')
-elif os.path.exists(args.dir_download):
-    file_pipeline = open(args.dir_download+'/run_pipelines_'+mid_underscore+'.sh','w')
-else:
-    file_pipeline = open('./run_pipelines_'+mid_underscore+'.sh','w')
+# if os.path.exists(args.pipeline_run_dir):
+#     file_pipeline = open(args.pipeline_run_dir+'/run_pipelines_'+mid_underscore+'.bash','w')
+# elif os.path.exists(args.dir_download):
+#     file_pipeline = open(args.dir_download+'/run_pipelines_'+mid_underscore+'.sh','w')
+# else:
+#     file_pipeline = open('./run_pipelines_'+mid_underscore+'.sh','w')
+file_pipeline = open('./run_pipelines_'+mid_underscore+'.sh','w')
+
+file_pipeline.write('#!/bin/bash\n')
 file_pipeline.write('# specify your own pipeline run/data directories\n')
-file_pipeline.write('DIR_PIPELINE_RUN='+args.dir_pipeline_run+'\n')
-file_pipeline.write('DIR_PIPELINE_DATA='+args.dir_pipeline_data+'\n')
+file_pipeline.write('pipeline_run_dir='+args.pipeline_run_dir+'\n')
+file_pipeline.write('DIR_PIPELINE_DATA='+args.pipeline_data_dir+'\n')
 file_pipeline.write('# path for pipeline script (atac.bds, chipseq.bds ...)\n')
-file_pipeline.write('BDS_PIPELINE_SCRIPT='+args.bds_pipeline_script+'\n')
+file_pipeline.write('BDS_PIPELINE_SCRIPT='+args.pipeline_script+'\n')
 file_pipeline.write('# URL base for genome browser tracks\n')
-file_pipeline.write('WEB_URL_BASE='+args.web_url_base+'\n\n')
+file_pipeline.write('WEB_URL_BASE='+args.pipeline_web_url_base+'\n\n')
     
 # send query to ENCODE portal and parse
 encode_search_url = args.encode_url_base+'/search/?format=json' \
@@ -75,14 +87,21 @@ encode_search_url = args.encode_url_base+'/search/?format=json' \
                     +'&replicates.library.biosample.donor.organism.scientific_name='+args.scientific_name
 print '* query:', encode_search_url
 
-request = urllib2.Request(encode_search_url)
-# request.add_header('Cache-Control', 'max-age=0')
-request.add_header('User-Agent','Mozilla/5.0')
-search_data = urllib2.build_opener().open(request).read()
-# search_data = urllib2.urlopen(encode_search_url).read()
+try:
+    # request = urllib2.Request(encode_search_url)
+    # request.add_header('User-Agent','Mozilla/5.0')
+    # search_data = urllib2.build_opener().open(request).read()
+    search_data = urllib2.urlopen(encode_search_url).read()
+except urllib2.HTTPError, e:
+    print e.code
+    print e.msg
+    exit()
 
+# search_data = subprocess.check_output('curl -H "Accept: application/json" "%s"' \
+#                         % (encode_search_url,), shell=True ).strip('\n')
 # print search_data
 json_data_search = json.loads(search_data)     
+# print json_data_search
 cnt_accession = 0
 for item in json_data_search['@graph']:
     accession_id = item['accession']
@@ -96,7 +115,7 @@ for item in json_data_search['@graph']:
     cnt_accession += 1
     # for pipeline script
     cmd_pipeline = '# %d\nTITLE=%s; WORKDIR=%s; mkdir -p $WORKDIR; cd $WORKDIR\n' \
-                        % (cnt_accession,accession_id,args.dir_pipeline_run+'/'+mid_slash+'/'+accession_id)
+                        % (cnt_accession,accession_id,args.pipeline_run_dir+'/'+mid_slash+'/'+accession_id)
     param_pipeline = ''
     
     fastqs = dict()
@@ -137,7 +156,7 @@ for item in json_data_search['@graph']:
             paired_with = f['paired_with'].split('/')[2]
 
         # relative path for fastq (for pipeline)
-        rel_fastq = args.dir_pipeline_data + dir_suffix +'/'+os.path.basename(url_fastq)
+        rel_fastq = args.pipeline_data_dir + dir_suffix +'/'+os.path.basename(url_fastq)
         accession_id_fastq = os.path.basename(url_fastq).replace('.fastq.gz','')                
 
         # store fastqs with the same bio_rep_id and pair: these fastqs will be pooled later in a pipeline                                
@@ -172,12 +191,21 @@ for item in json_data_search['@graph']:
             param_pipeline += ' %s -fastq%d%s $FASTQ%d%s' \
                                 % (param_endedness, bio_rep_id, suffix2, bio_rep_id, suffix)
         already_done.append(rel_fastq)
-    
-    param_award = '-' + args.award_rfa # -ENCODE3
-    cmd_pipeline += 'bds_scr $TITLE %s -nth %s %s -url_base %s -title $TITLE -species %s %s\n' \
-                    % (args.bds_pipeline_script, args.num_thread_pipeline, param_award, \
-                        args.web_url_base+'/'+mid_slash+'/'+accession_id+'/out', \
-                        args.ref_genome, param_pipeline)
-    cmd_pipeline += 'sleep 1\n\n'
+
+    param_basic = '-nth %s -title $TITLE -species %s -url_base %s ' \
+                    % (args.pipeline_num_thread, args.pipeline_ref_genome, \
+                        args.pipeline_web_url_base+'/'+mid_slash+'/'+accession_id+'/out' )
+    param_ENCODE_meta = '-ENCODE_accession %s -ENCODE_assay_category %s -ENCODE_assay_title %s -ENCODE_award_rfa %s ' \
+                    % (accession_id, args.assay_category, args.assay_title, args.award_rfa )
+    if args.pipeline_encode_lab: param_ENCODE_meta += '-ENCODE_lab '+args.pipeline_encode_lab+' '
+    if args.pipeline_encode_award: param_ENCODE_meta += '-ENCODE_award '+args.pipeline_encode_award+' '
+    if args.pipeline_encode_assembly: param_ENCODE_meta += '-ENCODE_assembly '+args.pipeline_encode_assembly+' '
+    if args.pipeline_encode_alias_prefix: param_ENCODE_meta += '-ENCODE_alias_prefix '+args.pipeline_encode_alias_prefix+' '
+
+    param_award_rfa = '-' + args.award_rfa + ' ' # -ENCODE3
+
+    cmd_pipeline += 'bds_scr $TITLE %s %s %s %s %s \n' \
+                    % (args.pipeline_script, param_basic, param_pipeline, param_ENCODE_meta, param_award_rfa )                    
+    cmd_pipeline += 'sleep 0.5\n\n'
     #print cmd_pipeline
     file_pipeline.write(cmd_pipeline)
