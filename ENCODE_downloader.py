@@ -1,16 +1,22 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python3
 import sys, os, time
 import json
-import urllib2
+import requests
 import subprocess
 import collections
 import re
 import argparse
 
 parser = argparse.ArgumentParser(prog='ENCODE fastq downloader', \
-                                    description='Download fastqs from the ENCODE portal and generate Kundaje lab BDS pipeline shell script for all samples.')
+                                    description='Download fastqs from the ENCODE portal and \
+                                    generate Kundaje lab BDS pipeline shell script for all samples. \
+                                    If authenticaion information (--encode-access-key-id and --encode-secret-key) is given, \
+                                    unpublished fastqs only visible to submitters with valid authentication \
+                                    can be downloaded.')
 parser.add_argument('dir_download', metavar='dir-download', type=str, \
-                        help='Root directory to save downloaded fastqs')
+                        help='Root directory to save downloaded fastqs, directory structure: \
+                            dir_download/award_rfa/assay_title/assay_category/each_sample_accession_id. \
+                            ')
 parser.add_argument('award_rfa', metavar='award-rfa', type=str, \
                         help='Award RFA (e.g. ENCODE3)')
 parser.add_argument('assay_category', metavar='assay-category', type=str, \
@@ -19,12 +25,22 @@ parser.add_argument('assay_title', metavar='assay-title', type=str, \
                         help='Assay title (e.g. ATAC-seq)')
 parser.add_argument('scientific_name', metavar='scientific-name', type=str, \
                         help='Scientific name for genome (e.g. Mus+musculus, Homo+sapiens)')
+group_accession_ids = parser.add_mutually_exclusive_group()
+group_accession_ids.add_argument('--ignored-accession-ids-file', type=str, \
+                        help='Accession IDs in this text file will be ignored. (1 acc. ID per line)')
+group_accession_ids.add_argument('--accession-ids-file', type=str, \
+                        help='Only accession IDs in this text file will be downloaded. (1 acc. ID per line). Others will be ignored.')
+parser.add_argument('--max-download', type=int, default=8, \
+                        help='Maximum number of fastqs for concurrent downloading. Forced to 1 if used with --encode-access-key-id')
+parser.add_argument('--encode-access-key-id', type=str, \
+                        help='To see files only visible to submitters vith a valid authentication. \
+                        Get your access key ID and secret key from the portal homepage menu YourID->Profile->Add Access key')
+parser.add_argument('--encode-secret-key', type=str, \
+                        help='ENCODE secret key (--encode-access-key-id must be specified).' )
+parser.add_argument('--dry-run', action="store_true",\
+                        help='The downloader shows a list of fastqs to be downloaded but does not download them.')
 parser.add_argument('--encode-url-base', type=str, default='https://www.encodeproject.org', \
                         help='URL base for the ENCODE portal (e.g. https://www.encodeproject.org')
-parser.add_argument('--ignored-accession-ids-file', type=str, \
-                        help='Accession IDs in this text file will be ignored. (1 acc. ID per line)')
-parser.add_argument('--max-download', type=int, default=8, \
-                        help='Maximum number of fastqs for concurrent downloading')
 parser.add_argument('--pipeline-num-thread', type=str, default='${PIPELINE_NTH}', \
                         help='Number of threads for each pipeline')
 parser.add_argument('--pipeline-run-dir', type=str, default='${PIPELINE_RUN_DIR}', \
@@ -45,6 +61,8 @@ parser.add_argument('--pipeline-encode-assembly', type=str, default='', \
                         help='ENCODE assembly (ref. genome name in ENCODE database) for pipeline (e.g. hg38 (x), GRCh38 (o)')
 parser.add_argument('--pipeline-encode-alias-prefix', type=str, default='', \
                         help='ENCODE alias prefix for pipeline (pipeline output files will have aliases of [prefix].[filename], lab name is recommended, e.g. anshul-kundaje)')
+parser.add_argument('--pipeline-extra-parameters', type=str, default='', \
+                        help='Extra parameters will be appended to the BDS pipeline command line. Use \\- for -')
 
 args = parser.parse_args()
 
@@ -53,11 +71,22 @@ mid_underscore = args.award_rfa+'_'+args.assay_category+'_'+args.assay_title+'_'
 mid_slash = args.award_rfa+'/'+args.assay_category+'/'+args.assay_title+'/'+args.scientific_name
 
 # loaded ignored accession list
+
 ignored_accession_ids = []
 if args.ignored_accession_ids_file and os.path.isfile(args.ignored_accession_ids_file):
-    ignored_accession_ids = open(args.ignored_accession_ids_file,'r').read().splitlines()
-print '* ignored_accession_ids:'
-print [accession_id for accession_id in ignored_accession_ids if accession_id and not accession_id.startswith("#") ]
+    with open(args.ignored_accession_ids_file,'r') as f:
+        ignored_accession_ids = f.read().splitlines()
+    ignored_accession_ids = \
+        [accession_id for accession_id in ignored_accession_ids if accession_id and not accession_id.startswith("#") ]
+    print('* ignored_accession_ids:\n', ignored_accession_ids)
+
+accession_ids = []
+if args.accession_ids_file and os.path.isfile(args.accession_ids_file):
+    with open(args.accession_ids_file,'r') as f:
+        accession_ids = f.read().splitlines()
+    accession_ids = \
+        [accession_id for accession_id in accession_ids if accession_id and not accession_id.startswith("#") ]
+    print('* accession_ids:\n', accession_ids)
 
 # init shell script for pipeline
 # if os.path.exists(args.pipeline_run_dir):
@@ -78,6 +107,7 @@ file_pipeline.write('# URL base for genome browser tracks\n')
 file_pipeline.write('WEB_URL_BASE='+args.pipeline_web_url_base+'\n\n')
     
 # send query to ENCODE portal and parse
+HEADERS = {'accept': 'application/json'}
 encode_search_url = args.encode_url_base+'/search/?format=json' \
                     +'&type=Experiment' \
                     +'&limit=all' \
@@ -85,32 +115,38 @@ encode_search_url = args.encode_url_base+'/search/?format=json' \
                     +'&assay_title='+args.assay_title \
                     +'&award.rfa='+args.award_rfa \
                     +'&replicates.library.biosample.donor.organism.scientific_name='+args.scientific_name
-print '* query:', encode_search_url
+print('* query:', encode_search_url)
 
-try:
-    # request = urllib2.Request(encode_search_url)
-    # request.add_header('User-Agent','Mozilla/5.0')
-    # search_data = urllib2.build_opener().open(request).read()
-    search_data = urllib2.urlopen(encode_search_url).read()
-except urllib2.HTTPError, e:
-    print e.code
-    print e.msg
-    exit()
+if args.encode_access_key_id and not args.encode_secret_key or \
+    not args.encode_access_key_id and args.encode_secret_key:
+    print("both --encode-access-key-id and --encode-secret-key must be specified.")    
+    raise ValueError
 
-# search_data = subprocess.check_output('curl -H "Accept: application/json" "%s"' \
-#                         % (encode_search_url,), shell=True ).strip('\n')
+if args.encode_access_key_id: # if ENCODE key is given
+    encode_auth = (args.encode_access_key_id, args.encode_secret_key)
+    search_data = requests.get(encode_search_url, headers=HEADERS, auth=encode_auth)
+else:
+    search_data = requests.get(encode_search_url, headers=HEADERS)    
+
 # print search_data
-json_data_search = json.loads(search_data)     
-# print json_data_search
+json_data_search = search_data.json() #json.loads(search_data)     
 cnt_accession = 0
 for item in json_data_search['@graph']:
     accession_id = item['accession']
     url_suffix = item['@id']
     # get json from ENCODE portal for accession id
-    json_data_exp=json.loads(urllib2.urlopen(args.encode_url_base+url_suffix+'?format=json').read())
-    print '* %s' % (accession_id,)
-    if accession_id in ignored_accession_ids: # ignore if in the black list
-        print 'ignored'
+    if args.encode_access_key_id: # if ENCODE key is given
+        search_data = requests.get(args.encode_url_base+url_suffix+'?format=json',headers=HEADERS, auth=encode_auth)
+    else:
+        search_data = requests.get(args.encode_url_base+url_suffix+'?format=json',headers=HEADERS)
+    json_data_exp = search_data.json()
+    # if accession_id == "ENCSR229QKB" : print(json_data_exp)
+    print('* %s' % (accession_id,))
+    if ignored_accession_ids and accession_id in ignored_accession_ids: # ignore if in the black list
+        print('ignored')
+        continue
+    elif accession_ids and not accession_id in accession_ids:
+        print('not in the list')
         continue
     cnt_accession += 1
     # for pipeline script
@@ -119,8 +155,14 @@ for item in json_data_search['@graph']:
     param_pipeline = ''
     
     fastqs = dict()
-    for f in json_data_exp['files']:
-        pair = int(f['paired_end']) if f.has_key('paired_end') else -1
+    for org_f in json_data_exp['original_files']:
+        if args.encode_access_key_id: # if ENCODE key is given
+            search_fastq = requests.get(args.encode_url_base+org_f+'?format=json',headers=HEADERS,auth=encode_auth)
+        else:
+            search_fastq = requests.get(args.encode_url_base+org_f+'?format=json',headers=HEADERS)
+        f = search_fastq.json()
+        if f['status']=='error': continue
+        pair = int(f['paired_end']) if 'paired_end' in f else -1
         if 'fastq' != f['file_type']: # ignore if not fastq
             continue
         url_fastq = args.encode_url_base+f['href']
@@ -135,7 +177,8 @@ for item in json_data_search['@graph']:
             dir_suffix += '/pair'+str(pair)
         dir = args.dir_download + dir_suffix
         cmd_mkdir = 'mkdir -p %s' % (dir,)
-        os.system(cmd_mkdir)
+        if not args.dry_run:
+            os.system(cmd_mkdir)
 
         # check number of downloading fastqs
         while int(subprocess.check_output('ps aux | grep wget | wc -l', shell=True).strip('\n')) \
@@ -144,15 +187,28 @@ for item in json_data_search['@graph']:
             time.sleep(20)
 
         # download fastq
-        print 'Downloading: %s, rep:%d, pair:%d' % (url_fastq, bio_rep_id, pair)
-        cmd_wget = 'wget -bqcN -P %s %s' % (dir,url_fastq)
-        os.system(cmd_wget)
-        # wait for 0.25 second per fastq
-        time.sleep(0.25)
+        if args.dry_run:
+            print('Downloading (dry-run): %s, rep:%d, pair:%d' % (url_fastq, bio_rep_id, pair))                        
+        else:
+            print('Downloading: %s, rep:%d, pair:%d' % (url_fastq, bio_rep_id, pair))
+            if args.encode_access_key_id:
+                basename = url_fastq.split("/")[-1]
+                filename = '%s/%s' % (dir,basename)
+                if not os.path.exists(filename):
+                    cmd_curl = 'curl -RL -u %s:%s %s -o %s' % (args.encode_access_key_id, \
+                            args.encode_secret_key, url_fastq, filename)
+                    os.system(cmd_curl)
+                    # print(cmd_curl)
+                # else:
+                    # print("already exists")
+            else:
+                cmd_wget = 'wget -bqcN -P %s %s' % (dir,url_fastq)
+                os.system(cmd_wget)
+                time.sleep(0.25) # wait for 0.25 second per fastq
 
         # check if paired with other fastq                
         paired_with = None
-        if f.has_key('paired_with'):
+        if 'paired_with' in f:
             paired_with = f['paired_with'].split('/')[2]
 
         # relative path for fastq (for pipeline)
@@ -201,6 +257,7 @@ for item in json_data_search['@graph']:
     if args.pipeline_encode_award: param_ENCODE_meta += '-ENCODE_award '+args.pipeline_encode_award+' '
     if args.pipeline_encode_assembly: param_ENCODE_meta += '-ENCODE_assembly '+args.pipeline_encode_assembly+' '
     if args.pipeline_encode_alias_prefix: param_ENCODE_meta += '-ENCODE_alias_prefix '+args.pipeline_encode_alias_prefix+' '
+    if args.pipeline_extra_parameters: param_ENCODE_meta += 'args.pipeline_extra_parameters '
 
     param_award_rfa = '-' + args.award_rfa + ' ' # -ENCODE3
 
