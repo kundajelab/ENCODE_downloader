@@ -61,8 +61,8 @@ parser.add_argument('--pipeline-encode-assembly', type=str, default='', \
                         help='ENCODE assembly (ref. genome name in ENCODE database) for pipeline (e.g. hg38 (x), GRCh38 (o)')
 parser.add_argument('--pipeline-encode-alias-prefix', type=str, default='', \
                         help='ENCODE alias prefix for pipeline (pipeline output files will have aliases of [prefix].[filename], lab name is recommended, e.g. anshul-kundaje)')
-parser.add_argument('--pipeline-extra-parameters', type=str, default='', \
-                        help='Extra parameters will be appended to the BDS pipeline command line. Use \\- for -')
+# parser.add_argument('--pipeline-extra-parameters', type=str, default='', \
+#                         help='Extra parameters will be appended to the BDS pipeline command line. Use \\- for -')
 
 args = parser.parse_args()
 
@@ -78,7 +78,7 @@ if args.ignored_accession_ids_file and os.path.isfile(args.ignored_accession_ids
         ignored_accession_ids = f.read().splitlines()
     ignored_accession_ids = \
         [accession_id for accession_id in ignored_accession_ids if accession_id and not accession_id.startswith("#") ]
-    print('* ignored_accession_ids:\n', ignored_accession_ids)
+    print '* ignored_accession_ids:\n', ignored_accession_ids
 
 accession_ids = []
 if args.accession_ids_file and os.path.isfile(args.accession_ids_file):
@@ -86,7 +86,7 @@ if args.accession_ids_file and os.path.isfile(args.accession_ids_file):
         accession_ids = f.read().splitlines()
     accession_ids = \
         [accession_id for accession_id in accession_ids if accession_id and not accession_id.startswith("#") ]
-    print('* accession_ids:\n', accession_ids)
+    print '* accession_ids:\n', accession_ids
 
 # init shell script for pipeline
 # if os.path.exists(args.pipeline_run_dir):
@@ -187,22 +187,28 @@ for item in json_data_search['@graph']:
             time.sleep(20)
 
         # download fastq
-        if args.dry_run:
-            print('Downloading (dry-run): %s, rep:%d, pair:%d' % (url_fastq, bio_rep_id, pair))                        
-        else:
-            print('Downloading: %s, rep:%d, pair:%d' % (url_fastq, bio_rep_id, pair))
-            if args.encode_access_key_id:
-                basename = url_fastq.split("/")[-1]
-                filename = '%s/%s' % (dir,basename)
-                if not os.path.exists(filename):
-                    cmd_curl = 'curl -RL -u %s:%s %s -o %s' % (args.encode_access_key_id, \
-                            args.encode_secret_key, url_fastq, filename)
-                    os.system(cmd_curl)
-                    # print(cmd_curl)
-                # else:
-                    # print("already exists")
+        if args.encode_access_key_id:
+            basename = url_fastq.split("/")[-1]
+            filename = '%s/%s' % (dir,basename)
+            if os.path.exists(filename):
+                print('File exists: %s, rep:%d, pair:%d' % (url_fastq, bio_rep_id, pair))
             else:
-                cmd_wget = 'wget -bqcN -P %s %s' % (dir,url_fastq)
+                cmd_curl = 'curl -RL -u %s:%s %s -o %s' % (args.encode_access_key_id, \
+                        args.encode_secret_key, url_fastq, filename)
+                if args.dry_run:
+                    print('Dry-run: %s, rep:%d, pair:%d' % (url_fastq, bio_rep_id, pair))
+                else:
+                    print('Downloading: %s, rep:%d, pair:%d' % (url_fastq, bio_rep_id, pair))
+                    os.system(cmd_curl)
+                # print(cmd_curl)
+            # else:
+                # print("already exists")
+        else:
+            cmd_wget = 'wget -bqcN -P %s %s' % (dir,url_fastq)
+            if args.dry_run:
+                print('Dry-run: %s, rep:%d, pair:%d' % (url_fastq, bio_rep_id, pair))
+            else:
+                print('Downloading: %s, rep:%d, pair:%d' % (url_fastq, bio_rep_id, pair))
                 os.system(cmd_wget)
                 time.sleep(0.25) # wait for 0.25 second per fastq
 
@@ -257,7 +263,7 @@ for item in json_data_search['@graph']:
     if args.pipeline_encode_award: param_ENCODE_meta += '-ENCODE_award '+args.pipeline_encode_award+' '
     if args.pipeline_encode_assembly: param_ENCODE_meta += '-ENCODE_assembly '+args.pipeline_encode_assembly+' '
     if args.pipeline_encode_alias_prefix: param_ENCODE_meta += '-ENCODE_alias_prefix '+args.pipeline_encode_alias_prefix+' '
-    if args.pipeline_extra_parameters: param_ENCODE_meta += 'args.pipeline_extra_parameters '
+    # if args.pipeline_extra_parameters: param_ENCODE_meta += args.pipeline_extra_parameters
 
     param_award_rfa = '-' + args.award_rfa + ' ' # -ENCODE3
 
