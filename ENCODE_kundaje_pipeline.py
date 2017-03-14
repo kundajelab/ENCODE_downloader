@@ -111,7 +111,6 @@ class PipelineSample(object):
             param_file = ''
             for file_acc_id in self.files:
                 file_type, status, bio_rep_id, pair, paired_with, rel_file = self.files[file_acc_id]
-                print file_type, rel_file
                 if rel_file in already_done:
                     continue                
                 cnt_fastq_to_be_pooled[bio_rep_id] += 1
