@@ -4,7 +4,7 @@ This Python script downloads data files from the [ENCODE portal](https://www.enc
 
 # Authentication
 
-In order to see unpublished files visible to sumitters only, you need to have authentication information from the ENCODE portal.
+To download unpublished files visible to sumitters only, you need to have authentication information from the ENCODE portal.
 Get your access key ID and secret key from the portal homepage menu YourID->Profile->Add Access key.
 
 # Usage
@@ -90,4 +90,10 @@ optional arguments:
 
 # Examples
 
-python ENCODE_downloader.py "https://www.encodeproject.org/search/?type=Experiment&assay_title=ATAC-seq&replicates.library.biosample.life_stage=postnatal&status=released" --pipeline-encode-lab /labs/anshul-kundaje/ --pipeline-encode-award /awards/U41HG007000/ --pipeline-encode-alias-prefix anshul-kundaje --pipeline-encode-award-rfa ENCODE3 --file-types bam --ignore-unpublished --encode-access-key-id [ENCODE_KEY_ID] --encode-secret-key [ENCODE_PASSWORD]
+## Using search query URL
+
+python ENCODE_downloader.py "https://www.encodeproject.org/search/?type=Experiment&assay_title=ATAC-seq&replicates.library.biosample.life_stage=postnatal&status=released" --pipeline-encode-lab /labs/anshul-kundaje/ --pipeline-encode-award /awards/U41HG007000/ --pipeline-encode-alias-prefix anshul-kundaje --pipeline-encode-award-rfa ENCODE3 --ignore-unpublished --encode-access-key-id [ENCODE_KEY_ID] --encode-secret-key [ENCODE_PASSWORD]
+
+## Using accession ids file
+
+python ENCODE_downloader.py acc_ids.txt --pipeline-encode-lab /labs/anshul-kundaje/ --pipeline-encode-award /awards/U41HG007000/ --pipeline-encode-alias-prefix anshul-kundaje --pipeline-encode-award-rfa ENCODE3 --ignore-unpublished --encode-access-key-id [ENCODE_KEY_ID] --encode-secret-key [ENCODE_PASSWORD]

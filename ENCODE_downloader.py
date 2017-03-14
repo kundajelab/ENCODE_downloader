@@ -129,12 +129,13 @@ def main():
     # read ignored accession ids
     ignored_accession_ids = get_accession_ids( args.ignored_accession_ids_file )
 
+    HEADERS = {'accept': 'application/json'}
+    if args.encode_access_key_id: # if ENCODE key is given
+        encode_auth = (args.encode_access_key_id, args.encode_secret_key)
     accession_ids = []
     if is_encode_url(args.url_or_file):
         # send query to ENCODE portal and parse
-        HEADERS = {'accept': 'application/json'}
         if args.encode_access_key_id: # if ENCODE key is given
-            encode_auth = (args.encode_access_key_id, args.encode_secret_key)
             search_data = requests.get(args.url_or_file, headers=HEADERS, auth=encode_auth)
         else:
             search_data = requests.get(args.url_or_file, headers=HEADERS)    
@@ -152,7 +153,7 @@ def main():
     # download files for each accession id
     for accession_id in accession_ids:
         # get accession info
-        print(accession_id)
+        print("="*10+" "+accession_id+" "+"="*10)
         if args.dry_run_list_accession_ids: continue
         if ignored_accession_ids and accession_id in ignored_accession_ids: # ignore if in the black list
             print('\tignored (--ignored-accession-ids-file)')

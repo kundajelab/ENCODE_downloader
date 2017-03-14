@@ -31,10 +31,11 @@ class PipelineShellScript(object):
             f.write(str(self))
 
 class PipelineSample(object):
-    sn = 0
+    counter = 0
     # acc_id = ENCODE accession id
     def __init__(self, sh, acc_id, assembly, assay_title, assay_category, award_rfa, files):
-        self.sn += 1
+        PipelineSample.counter += 1
+        self.sn = PipelineSample.counter
         self.sh = sh
         self.acc_id = acc_id
         self.assembly = assembly
@@ -143,7 +144,7 @@ class PipelineSample(object):
                                 file_acc_id,status))
                             continue
                         ret += 'BAM{}={}\n'.format(bio_rep_id, rel_file)
-                        param_file += ' {} -bam{} $BAM{}' \
+                        param_file += ' {} -filt_bam{} $BAM{}' \
                                            .format(param_endedness, bio_rep_id, bio_rep_id)
                 already_done.append(rel_file)
 
