@@ -1,274 +1,278 @@
-#!/usr/bin/env python3
-import sys, os, time
+import sys
+import os
+import time
 import json
 import requests
 import subprocess
 import collections
 import re
 import argparse
+import ENCODE_kundaje_pipeline
 
-parser = argparse.ArgumentParser(prog='ENCODE fastq downloader', \
-                                    description='Download fastqs from the ENCODE portal and \
-                                    generate Kundaje lab BDS pipeline shell script for all samples. \
-                                    If authenticaion information (--encode-access-key-id and --encode-secret-key) is given, \
-                                    unpublished fastqs only visible to submitters with valid authentication \
-                                    can be downloaded.')
-parser.add_argument('dir_download', metavar='dir-download', type=str, \
-                        help='Root directory to save downloaded fastqs, directory structure: \
-                            dir_download/award_rfa/assay_title/assay_category/each_sample_accession_id. \
-                            ')
-parser.add_argument('award_rfa', metavar='award-rfa', type=str, \
-                        help='Award RFA (e.g. ENCODE3)')
-parser.add_argument('assay_category', metavar='assay-category', type=str, \
-                        help='Assay category (e.g. DNA+accessibility)')
-parser.add_argument('assay_title', metavar='assay-title', type=str, \
-                        help='Assay title (e.g. ATAC-seq)')
-parser.add_argument('scientific_name', metavar='scientific-name', type=str, \
-                        help='Scientific name for genome (e.g. Mus+musculus, Homo+sapiens)')
-group_accession_ids = parser.add_mutually_exclusive_group()
-group_accession_ids.add_argument('--ignored-accession-ids-file', type=str, \
-                        help='Accession IDs in this text file will be ignored. (1 acc. ID per line)')
-group_accession_ids.add_argument('--accession-ids-file', type=str, \
-                        help='Only accession IDs in this text file will be downloaded. (1 acc. ID per line). Others will be ignored.')
-parser.add_argument('--max-download', type=int, default=8, \
-                        help='Maximum number of fastqs for concurrent downloading. Forced to 1 if used with --encode-access-key-id')
-parser.add_argument('--encode-access-key-id', type=str, \
-                        help='To see files only visible to submitters vith a valid authentication. \
-                        Get your access key ID and secret key from the portal homepage menu YourID->Profile->Add Access key')
-parser.add_argument('--encode-secret-key', type=str, \
-                        help='ENCODE secret key (--encode-access-key-id must be specified).' )
-parser.add_argument('--dry-run', action="store_true",\
-                        help='The downloader shows a list of fastqs to be downloaded but does not download them.')
-parser.add_argument('--encode-url-base', type=str, default='https://www.encodeproject.org', \
-                        help='URL base for the ENCODE portal (e.g. https://www.encodeproject.org')
-parser.add_argument('--pipeline-num-thread', type=str, default='${PIPELINE_NTH}', \
-                        help='Number of threads for each pipeline')
-parser.add_argument('--pipeline-run-dir', type=str, default='${PIPELINE_RUN_DIR}', \
-                        help='Root directory of outputs for pipeline')
-parser.add_argument('--pipeline-data-dir', type=str, default='${PIPELINE_DATA_DIR}', \
-                        help='Root directory of data for pipeline (recommended to match with the first parameter [DIR_DOWNLOAD])')
-parser.add_argument('--pipeline-script', type=str, default='${PIPELINE_SCRIPT}', \
-                        help='BDS pipeline script (e.g. /path/to/atac.bds)')
-parser.add_argument('--pipeline-web-url-base', type=str, default='${PIPELINE_WEB_URL_BASE}', \
-                        help='URL base for browser tracks (e.g. http://mitra.stanford.edu/kundaje')
-parser.add_argument('--pipeline-ref-genome', type=str, default='${REF_GENOME}', \
-                        help='Reference genome name for pipeline (e.g. hg38_ENCODE3, mm10_ENCODE3, hg19, mm9)')
-parser.add_argument('--pipeline-encode-lab', type=str, default='', \
-                        help='ENCODE lab for pipeline (e.g. /labs/anshul-kundaje/)')
-parser.add_argument('--pipeline-encode-award', type=str, default='', \
-                        help='ENCODE award for pipeline (e.g. /awards/U41HG007000/)')
-parser.add_argument('--pipeline-encode-assembly', type=str, default='', \
-                        help='ENCODE assembly (ref. genome name in ENCODE database) for pipeline (e.g. hg38 (x), GRCh38 (o)')
-parser.add_argument('--pipeline-encode-alias-prefix', type=str, default='', \
-                        help='ENCODE alias prefix for pipeline (pipeline output files will have aliases of [prefix].[filename], lab name is recommended, e.g. anshul-kundaje)')
-# parser.add_argument('--pipeline-extra-parameters', type=str, default='', \
-#                         help='Extra parameters will be appended to the BDS pipeline command line. Use \\- for -')
+ENCODE_BASE_URL = 'https://www.encodeproject.org'
 
-args = parser.parse_args()
+def parse_arguments():
+    parser = argparse.ArgumentParser(prog='ENCODE downloader',
+                                        description='Downloads genome data files from the ENCODE portal \
+                                        and save them under [WORK_DIR]/[ACCESSION_ID]/. \
+                                        Also generates Kundaje lab BDS pipeline shell script for all samples (for fastq and bam only). \
+                                        If authentication information (--encode-access-key-id and --encode-secret-key) is given, \
+                                        unpublished files only visible to submitters with valid authentication \
+                                        can be downloaded.')
+    parser.add_argument('url_or_file', metavar='url-or-file', type=str,
+                            help='ENCODE search query URL starting with '+ENCODE_BASE_URL+'/search/? or a text file with accession IDs. \
+                            Make sure that URL is quotted in the command line.')
+    parser.add_argument('--file-types', nargs='+', default=['fastq'], type=str,
+                            help='List of file types to be downloaded: fastq (default), bam, bed, bigWig, bigBed, ... \
+                            e.g. --file-types fastq bam.')
+    parser.add_argument('--encode-access-key-id', type=str,
+                            help='To download unpublished files visible to submitters vith a valid authentication. \
+                            Get your access key ID and secret key from the portal homepage menu YourID->Profile->Add Access key')
+    parser.add_argument('--encode-secret-key', type=str,
+                            help='ENCODE secret key (--encode-access-key-id must be specified).' )
+    parser.add_argument('--ignored-accession-ids-file', type=str,
+                            help='Text file with ignored accession IDs.')    
+    parser.add_argument('--dry-run', action="store_true",\
+                            help='Dry-run: downloads nothing, but generates pipeline shell script.')
+    parser.add_argument('--dry-run-list-accession-ids', action="store_true",
+                            help='Dry-run: downloads nothing, but show a list of accession IDs matching URL.')
+    parser.add_argument('--max-download', type=int, default=8,
+                            help='Maximum number of files for concurrent downloading. \
+                            Parallel downloading will be disabled when used with --encode-access-key-id')
+    parser.add_argument('--assembly-map', nargs='+', default=['Mus+musculus:mm10','Homo+sapiens:GRCh38'], type=str,
+                            help='List of strings to infer ENCODE assembly from species name; [SPECIES_NAME]:[ASSEMBLY]. \
+                            e.g. --assembly-map Mus+musculus:mm10 Homo+sapiens:GRCh38')
+    parser.add_argument('--pipeline-atac-bds-path', type=str, default='${ATAC_BDS_DIR}/atac.bds',
+                            help='Path for atac.bds.')
+    parser.add_argument('--pipeline-chipseq-bds-path', type=str, default='${CHIPSEQ_BDS_DIR}/chipseq.bds',
+                            help='Path for chipseq.bds.')
+    parser.add_argument('--pipeline-web-url-base', type=str,
+                            help='URL base for browser tracks. e.g. http://mitra.stanford.edu/kundaje')
+    parser.add_argument('--pipeline-encode-lab', type=str, default='',
+                            help='ENCODE lab for pipeline. e.g. /labs/anshul-kundaje/')
+    parser.add_argument('--pipeline-encode-award', type=str, default='',
+                            help='ENCODE award for pipeline. e.g. /awards/U41HG007000/')
+    parser.add_argument('--pipeline-encode-award-rfa', type=str, default='',
+                            help='ENCODE award RFA for pipeline. e.g. ENCODE3')
+    parser.add_argument('--pipeline-encode-alias-prefix', type=str, default='',
+                            help='ENCODE alias prefix for pipeline (pipeline output files will have aliases of [prefix]:[filename], \
+                            lab name is recommended). e.g. anshul-kundaje)')
+    group_ignore_status = parser.add_mutually_exclusive_group()
+    group_ignore_status.add_argument('--ignore-released', action='store_true', \
+                            help='Ignore released data (except fastqs).')
+    group_ignore_status.add_argument('--ignore-unpublished', action='store_true', \
+                            help='Ignore unpublished data.')
+    args = parser.parse_args()
 
-# commonly used string
-mid_underscore = args.award_rfa+'_'+args.assay_category+'_'+args.assay_title+'_'+args.scientific_name
-mid_slash = args.award_rfa+'/'+args.assay_category+'/'+args.assay_title+'/'+args.scientific_name
-
-# loaded ignored accession list
-
-ignored_accession_ids = []
-if args.ignored_accession_ids_file and os.path.isfile(args.ignored_accession_ids_file):
-    with open(args.ignored_accession_ids_file,'r') as f:
-        ignored_accession_ids = f.read().splitlines()
-    ignored_accession_ids = \
-        [accession_id for accession_id in ignored_accession_ids if accession_id and not accession_id.startswith("#") ]
-    print '* ignored_accession_ids:\n', ignored_accession_ids
-
-accession_ids = []
-if args.accession_ids_file and os.path.isfile(args.accession_ids_file):
-    with open(args.accession_ids_file,'r') as f:
-        accession_ids = f.read().splitlines()
-    accession_ids = \
-        [accession_id for accession_id in accession_ids if accession_id and not accession_id.startswith("#") ]
-    print '* accession_ids:\n', accession_ids
-
-# init shell script for pipeline
-# if os.path.exists(args.pipeline_run_dir):
-#     file_pipeline = open(args.pipeline_run_dir+'/run_pipelines_'+mid_underscore+'.bash','w')
-# elif os.path.exists(args.dir_download):
-#     file_pipeline = open(args.dir_download+'/run_pipelines_'+mid_underscore+'.sh','w')
-# else:
-#     file_pipeline = open('./run_pipelines_'+mid_underscore+'.sh','w')
-file_pipeline = open('./run_pipelines_'+mid_underscore+'.sh','w')
-
-file_pipeline.write('#!/bin/bash\n')
-file_pipeline.write('# specify your own pipeline run/data directories\n')
-file_pipeline.write('pipeline_run_dir='+args.pipeline_run_dir+'\n')
-file_pipeline.write('DIR_PIPELINE_DATA='+args.pipeline_data_dir+'\n')
-file_pipeline.write('# path for pipeline script (atac.bds, chipseq.bds ...)\n')
-file_pipeline.write('BDS_PIPELINE_SCRIPT='+args.pipeline_script+'\n')
-file_pipeline.write('# URL base for genome browser tracks\n')
-file_pipeline.write('WEB_URL_BASE='+args.pipeline_web_url_base+'\n\n')
-    
-# send query to ENCODE portal and parse
-HEADERS = {'accept': 'application/json'}
-encode_search_url = args.encode_url_base+'/search/?format=json' \
-                    +'&type=Experiment' \
-                    +'&limit=all' \
-                    +'&assay_slims='+args.assay_category \
-                    +'&assay_title='+args.assay_title \
-                    +'&award.rfa='+args.award_rfa \
-                    +'&replicates.library.biosample.donor.organism.scientific_name='+args.scientific_name
-print('* query:', encode_search_url)
-
-if args.encode_access_key_id and not args.encode_secret_key or \
-    not args.encode_access_key_id and args.encode_secret_key:
-    print("both --encode-access-key-id and --encode-secret-key must be specified.")    
-    raise ValueError
-
-if args.encode_access_key_id: # if ENCODE key is given
-    encode_auth = (args.encode_access_key_id, args.encode_secret_key)
-    search_data = requests.get(encode_search_url, headers=HEADERS, auth=encode_auth)
-else:
-    search_data = requests.get(encode_search_url, headers=HEADERS)    
-
-# print search_data
-json_data_search = search_data.json() #json.loads(search_data)     
-cnt_accession = 0
-for item in json_data_search['@graph']:
-    accession_id = item['accession']
-    url_suffix = item['@id']
-    # get json from ENCODE portal for accession id
-    if args.encode_access_key_id: # if ENCODE key is given
-        search_data = requests.get(args.encode_url_base+url_suffix+'?format=json',headers=HEADERS, auth=encode_auth)
+    if args.encode_access_key_id and not args.encode_secret_key or \
+        not args.encode_access_key_id and args.encode_secret_key:
+        print("Both parameters --encode-access-key-id and --encode-secret-key must be specified together.")
+        raise ValueError
+    if is_encode_search_query_url(args.url_or_file):
+        if not 'limit=all' in args.url_or_file:
+            args.url_or_file += '&limit=all'
+        if not 'format=json' in args.url_or_file:
+            args.url_or_file += '&format=json'
+    elif os.path.exists(args.url_or_file):
+        pass
     else:
-        search_data = requests.get(args.encode_url_base+url_suffix+'?format=json',headers=HEADERS)
-    json_data_exp = search_data.json()
-    # if accession_id == "ENCSR229QKB" : print(json_data_exp)
-    print('* %s' % (accession_id,))
-    if ignored_accession_ids and accession_id in ignored_accession_ids: # ignore if in the black list
-        print('ignored')
-        continue
-    elif accession_ids and not accession_id in accession_ids:
-        print('not in the list')
-        continue
-    cnt_accession += 1
-    # for pipeline script
-    cmd_pipeline = '# %d\nTITLE=%s; WORKDIR=%s; mkdir -p $WORKDIR; cd $WORKDIR\n' \
-                        % (cnt_accession,accession_id,args.pipeline_run_dir+'/'+mid_slash+'/'+accession_id)
-    param_pipeline = ''
-    
-    fastqs = dict()
-    for org_f in json_data_exp['original_files']:
+        print("URL or text file is allowed for input ({}).".format(args.url_or_file))
+        raise ValueError
+    # make file_types lowercase
+    for i, file_type in enumerate(args.file_types):
+        args.file_types[i] = file_type.lower()
+    return args
+
+def is_encode_url( url ):
+    return url.startswith(ENCODE_BASE_URL)
+
+def is_encode_search_query_url( url ):
+    return url.startswith(ENCODE_BASE_URL+'/search')
+
+def is_file_type_fastq( file_type ):
+    return file_type.lower() in ['fastq']
+
+def is_file_type_bam( file_type ):
+    return file_type.lower() in ['bam']
+
+def get_accession_ids( accession_ids_file ):
+    accession_ids = []
+    if accession_ids_file and os.path.isfile(accession_ids_file):
+        with open(accession_ids_file,'r') as f:
+            accession_ids = f.read().splitlines()
+        accession_ids = [accession_id for accession_id in accession_ids \
+                if accession_id and accession_id.strip() \
+                    and not accession_id.strip().startswith("#") \
+                    and not accession_id.strip().startswith("/") ]
+    return accession_ids
+
+def deep_search(json, s, help_str='root'):
+    ret = False
+    if type(json)==list:
+        for i, e in enumerate(json):
+            ret |= deep_search(e, s, help_str+'[{}]'.format(i))
+    elif type(json)==dict:
+        for k in json:        
+            ret |= deep_search(json[k], s, help_str+'.{}'.format(k))
+    else:
+        try:
+            if s in str(json):
+                # print '{}: {}'.format(help_str, str(json))
+                ret |= True
+        except UnicodeEncodeError:
+            pass
+    return ret
+
+def main():
+    args = parse_arguments()
+
+    # read ignored accession ids
+    ignored_accession_ids = get_accession_ids( args.ignored_accession_ids_file )
+
+    accession_ids = []
+    if is_encode_url(args.url_or_file):
+        # send query to ENCODE portal and parse
+        HEADERS = {'accept': 'application/json'}
         if args.encode_access_key_id: # if ENCODE key is given
-            search_fastq = requests.get(args.encode_url_base+org_f+'?format=json',headers=HEADERS,auth=encode_auth)
+            encode_auth = (args.encode_access_key_id, args.encode_secret_key)
+            search_data = requests.get(args.url_or_file, headers=HEADERS, auth=encode_auth)
         else:
-            search_fastq = requests.get(args.encode_url_base+org_f+'?format=json',headers=HEADERS)
-        f = search_fastq.json()
-        if f['status']=='error': continue
-        pair = int(f['paired_end']) if 'paired_end' in f else -1
-        if 'fastq' != f['file_type']: # ignore if not fastq
+            search_data = requests.get(args.url_or_file, headers=HEADERS)    
+        json_data_search = search_data.json() #json.loads(search_data)
+        for item in json_data_search['@graph']:
+            accession_id = item['accession']
+            accession_ids.append(accession_id)
+    else:
+        accession_ids = get_accession_ids( args.url_or_file )
+
+    pipeline_sh = ENCODE_kundaje_pipeline.PipelineShellScript( args.pipeline_encode_lab, 
+        args.pipeline_encode_alias_prefix, args.pipeline_encode_award, os.path.abspath('.'), 
+        args.pipeline_web_url_base, args.pipeline_chipseq_bds_path, args.pipeline_atac_bds_path)
+
+    # download files for each accession id
+    for accession_id in accession_ids:
+        # get accession info
+        print(accession_id)
+        if args.dry_run_list_accession_ids: continue
+        if ignored_accession_ids and accession_id in ignored_accession_ids: # ignore if in the black list
+            print('\tignored (--ignored-accession-ids-file)')
             continue
-        url_fastq = args.encode_url_base+f['href']
-        bio_rep_id = int(f['replicate']['biological_replicate_number'])
-        tech_rep_id = int(f['replicate']['technical_replicate_number'])
+        if accession_ids and not accession_id in accession_ids:
+            print('\tnot in the list (--accession-ids-file)')
+            continue
+        # get json from ENCODE portal for accession id
+        if args.encode_access_key_id: # if ENCODE key is given
+            search_data = requests.get(ENCODE_BASE_URL+'/experiments/'+accession_id+'?format=json',
+                headers=HEADERS, auth=encode_auth)
+        else:
+            search_data = requests.get(ENCODE_BASE_URL+'/experiments/'+accession_id+'?format=json',
+                headers=HEADERS)
+        json_data_exp = search_data.json()        
 
-        if tech_rep_id > 1:
-            break;
-        # create directory for downloading
-        dir_suffix = '/'+mid_slash+'/'+accession_id+'/rep'+str(bio_rep_id)
-        if pair > 0:
-            dir_suffix += '/pair'+str(pair)
-        dir = args.dir_download + dir_suffix
-        cmd_mkdir = 'mkdir -p %s' % (dir,)
-        if not args.dry_run:
-            os.system(cmd_mkdir)
+        assembly = None
+        # if 'assembly' in json_data_exp: # if key assembly exists, get the first element
+        #     if len(json_data_exp['assembly'])>0:
+        #         assembly = json_data_exp['assembly'][0]
+        if not assembly: # infer assembly from organism name...
+            for s in args.assembly_map:
+                arr = s.replace('+',' ').split(':')
+                if deep_search(json_data_exp, arr[0]):
+                    assembly = arr[1]
+                    print('Warning: inferred assembly ({}) from keys and values in json (e.g. organism name)...'.format(assembly))
+                    break
 
-        # check number of downloading fastqs
-        while int(subprocess.check_output('ps aux | grep wget | wc -l', shell=True).strip('\n')) \
-                    > args.max_download-1:
-            print '# of downloads exceeded the limit (%d), retrying in 20 seconds...' % (args.max_download,)
-            time.sleep(20)
+        assay_title = json_data_exp['assay_title']
+        if 'assay_category' in json_data_exp:        
+            assay_category = json_data_exp['assay_category']
+        else:
+            assay_category = None
+        award_rfa = args.pipeline_encode_award_rfa
 
-        # download fastq
-        if args.encode_access_key_id:
-            basename = url_fastq.split("/")[-1]
-            filename = '%s/%s' % (dir,basename)
+        # read files in accession        
+        files = {}
+        for org_f in json_data_exp['original_files']:
+            if args.encode_access_key_id: # if ENCODE key is given
+                search_file = requests.get(ENCODE_BASE_URL+org_f+'?format=json',headers=HEADERS,auth=encode_auth)
+            else:
+                search_file = requests.get(ENCODE_BASE_URL+org_f+'?format=json',headers=HEADERS)
+            f = search_file.json()
+            status = f['status']
+            if status=='error': continue
+            file_type = f['file_type'].lower().split(' ')[0]
+            if file_type not in args.file_types: continue
+            url_file = ENCODE_BASE_URL+f['href']
+            file_accession_id = f['accession']
+            if file_type != 'fastq':
+                if args.ignore_released and status=='released': continue
+                if args.ignore_unpublished and status!='released': continue
+
+            if 'paired_end' in f:
+                pair = int(f['paired_end']) 
+            else:
+                pair = -1
+            if 'replicate' in f and 'biological_replicates_number'in f['replicate']:
+                bio_rep_id = int(f['replicate']['biological_replicate_number'])
+            elif 'biological_replicates'in f:
+                bio_rep_id = int(f['biological_replicates'][0])
+            else:
+                bio_rep_id = 0
+            if 'replicate' in f and 'technical_replicate_number'in f['replicate']:
+                tech_rep_id = int(f['replicate']['technical_replicate_number'])
+            elif 'technical_replicates' in f:
+                tech_rep_id = f['technical_replicates'][0]
+            else:
+                tech_rep_id = 0
+            if file_type == 'fastq' and tech_rep_id > 1: break;
+
+            # create directory for downloading
+            dir_suffix = '/'+accession_id
+            if bio_rep_id: dir_suffix += '/rep'+str(bio_rep_id)            
+            if pair > 0: dir_suffix += '/pair'+str(pair)
+
+            dir = './' + dir_suffix
+            cmd_mkdir = 'mkdir -p {}'.format(dir)
+            if not args.dry_run:
+                os.system(cmd_mkdir)
+
+            # check number of downloading files
+            while int(subprocess.check_output('ps aux | grep wget | wc -l', shell=True).strip('\n')) \
+                        > args.max_download-1:
+                print '# of downloads exceeded the limit ({}), retrying in 20 seconds...'.format(args.max_download)
+                time.sleep(20)
+
+            # download file
+            basename = url_file.split("/")[-1]
+            filename = '{}/{}'.format(dir,basename)
             if os.path.exists(filename):
-                print('File exists: %s, rep:%d, pair:%d' % (url_fastq, bio_rep_id, pair))
+                print('File exists ({}): {}, rep:{}, pair:{}'.format(file_type, url_file, bio_rep_id, pair))
+            elif args.dry_run:
+                print('Dry-run ({}): {}, rep:{}, pair:{}'.format(file_type, url_file, bio_rep_id, pair))
             else:
-                cmd_curl = 'curl -RL -u %s:%s %s -o %s' % (args.encode_access_key_id, \
-                        args.encode_secret_key, url_fastq, filename)
-                if args.dry_run:
-                    print('Dry-run: %s, rep:%d, pair:%d' % (url_fastq, bio_rep_id, pair))
-                else:
-                    print('Downloading: %s, rep:%d, pair:%d' % (url_fastq, bio_rep_id, pair))
+                print('Downloading ({}): {}, rep:{}, pair:{}'.format(file_type, url_file, bio_rep_id, pair))
+                if args.encode_access_key_id:
+                    cmd_curl = 'curl -RL -u {}:{} {} -o {}'.format(args.encode_access_key_id,
+                            args.encode_secret_key, url_file, filename)
                     os.system(cmd_curl)
-                # print(cmd_curl)
-            # else:
-                # print("already exists")
-        else:
-            cmd_wget = 'wget -bqcN -P %s %s' % (dir,url_fastq)
-            if args.dry_run:
-                print('Dry-run: %s, rep:%d, pair:%d' % (url_fastq, bio_rep_id, pair))
-            else:
-                print('Downloading: %s, rep:%d, pair:%d' % (url_fastq, bio_rep_id, pair))
-                os.system(cmd_wget)
-                time.sleep(0.25) # wait for 0.25 second per fastq
+                else:
+                    cmd_wget = 'wget -bqcN -P {} {}'.format(dir,url_file)
+                    os.system(cmd_wget)
+                    time.sleep(0.25) # wait for 0.25 second per fastq
 
-        # check if paired with other fastq                
-        paired_with = None
-        if 'paired_with' in f:
-            paired_with = f['paired_with'].split('/')[2]
+            # relative path for file (for pipeline)            
+            rel_file = os.getcwd() + dir_suffix +'/'+os.path.basename(url_file)
 
-        # relative path for fastq (for pipeline)
-        rel_fastq = args.pipeline_data_dir + dir_suffix +'/'+os.path.basename(url_fastq)
-        accession_id_fastq = os.path.basename(url_fastq).replace('.fastq.gz','')                
+            # check if paired with other fastq                
+            paired_with = None
+            if file_type == 'fastq' and 'paired_with' in f:
+                paired_with = f['paired_with'].split('/')[2]
 
-        # store fastqs with the same bio_rep_id and pair: these fastqs will be pooled later in a pipeline                                
-        fastqs[accession_id_fastq] = (bio_rep_id, pair, paired_with, rel_fastq)
+            # for fastq, store files with the same bio_rep_id and pair: these files will be pooled later in a pipeline
+            files[file_accession_id] = (file_type, status, bio_rep_id, pair, paired_with, rel_file)
 
-    cnt_fastq_to_be_pooled = collections.defaultdict(int)
-    already_done = []
-    for accession_id_fastq in fastqs:
-        bio_rep_id, pair, paired_with, rel_fastq = fastqs[accession_id_fastq]
-        if rel_fastq in already_done:
-            continue                
-        cnt_fastq_to_be_pooled[bio_rep_id] += 1
-        # suffix for fastqs to be pooled
-        param_endedness = ('-pe' if paired_with else '-se' ) + str(bio_rep_id)
-        if cnt_fastq_to_be_pooled[bio_rep_id] > 1:
-            suffix = '_'+str(cnt_fastq_to_be_pooled[bio_rep_id])
-            suffix2 = ':'+str(cnt_fastq_to_be_pooled[bio_rep_id])
-            param_endedness = ''
-        else:
-            suffix = ''
-            suffix2 = ''
-        if paired_with:
-            _, pair2, _, rel_fastq2 = fastqs[paired_with]
-            cmd_pipeline += 'FASTQ%d_%d%s=%s\n' % (bio_rep_id, pair, suffix, rel_fastq)
-            cmd_pipeline += 'FASTQ%d_%d%s=%s\n' % (bio_rep_id, pair2, suffix, rel_fastq2)
-            param_pipeline += ' %s -fastq%d_%d%s $FASTQ%d_%d%s -fastq%d_%d%s $FASTQ%d_%d%s' \
-                                % ( param_endedness, bio_rep_id, pair, suffix2, bio_rep_id, pair, suffix, \
-                                               bio_rep_id, pair2, suffix2, bio_rep_id, pair2, suffix )
-            already_done.append(rel_fastq2)
-        else:
-            cmd_pipeline += 'FASTQ%d%s=%s\n' % (bio_rep_id, suffix, rel_fastq)
-            param_pipeline += ' %s -fastq%d%s $FASTQ%d%s' \
-                                % (param_endedness, bio_rep_id, suffix2, bio_rep_id, suffix)
-        already_done.append(rel_fastq)
+        # print accession_id, assembly, assay_title, award_rfa, files
+        pipeline_sh.add_sample(accession_id, assembly, assay_title, assay_category, award_rfa, files)
 
-    param_basic = '-nth %s -title $TITLE -species %s -url_base %s ' \
-                    % (args.pipeline_num_thread, args.pipeline_ref_genome, \
-                        args.pipeline_web_url_base+'/'+mid_slash+'/'+accession_id+'/out' )
-    param_ENCODE_meta = '-ENCODE_accession %s -ENCODE_assay_category %s -ENCODE_assay_title %s -ENCODE_award_rfa %s ' \
-                    % (accession_id, args.assay_category, args.assay_title, args.award_rfa )
-    if args.pipeline_encode_lab: param_ENCODE_meta += '-ENCODE_lab '+args.pipeline_encode_lab+' '
-    if args.pipeline_encode_award: param_ENCODE_meta += '-ENCODE_award '+args.pipeline_encode_award+' '
-    if args.pipeline_encode_assembly: param_ENCODE_meta += '-ENCODE_assembly '+args.pipeline_encode_assembly+' '
-    if args.pipeline_encode_alias_prefix: param_ENCODE_meta += '-ENCODE_alias_prefix '+args.pipeline_encode_alias_prefix+' '
-    # if args.pipeline_extra_parameters: param_ENCODE_meta += args.pipeline_extra_parameters
+    pipeline_sh.write_to_file()
 
-    param_award_rfa = '-' + args.award_rfa + ' ' # -ENCODE3
-
-    cmd_pipeline += 'bds_scr $TITLE %s %s %s %s %s \n' \
-                    % (args.pipeline_script, param_basic, param_pipeline, param_ENCODE_meta, param_award_rfa )                    
-    cmd_pipeline += 'sleep 0.5\n\n'
-    #print cmd_pipeline
-    file_pipeline.write(cmd_pipeline)
+if __name__=='__main__':
+    main()

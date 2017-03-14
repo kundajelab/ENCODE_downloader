@@ -2,4 +2,5 @@ run_pipelines*.sh
 accession_ids.txt
 ignored_accession_ids.txt
 old
+*.pyc
 __pycache__
