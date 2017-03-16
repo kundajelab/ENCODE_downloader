@@ -22,9 +22,13 @@ def parse_arguments():
     parser.add_argument('url_or_file', metavar='url-or-file', type=str,
                             help='ENCODE search query URL starting with '+ENCODE_BASE_URL+'/search/? or a text file with accession IDs. \
                             Make sure that URL is quotted in the command line.')
+    parser.add_argument('--dir', default='.', type=str,
+                            help='[WORK_DIR] : Root directory for all downloaded genome data.')
     parser.add_argument('--file-types', nargs='+', default=['fastq'], type=str,
                             help='List of file types to be downloaded: fastq (default), bam, bed, bigWig, bigBed, ... \
                             e.g. --file-types fastq bam.')
+    parser.add_argument('--assemblies', nargs='+', default=['all'], type=str,
+                            help='Assemblies (reference used for mapping) allowed. e.g. --assemblies GRCh38 hg19.')
     parser.add_argument('--encode-access-key-id', type=str,
                             help='To download unpublished files visible to submitters vith a valid authentication. \
                             Get your access key ID and secret key from the portal homepage menu YourID->Profile->Add Access key')
@@ -106,7 +110,7 @@ def get_accession_ids( accession_ids_file ):
                     and not accession_id.strip().startswith("/") ]
     return accession_ids
 
-def deep_search(json, s, help_str='root'):
+def deep_search(json, s, help_str='root',debug=False):
     ret = False
     if type(json)==list:
         for i, e in enumerate(json):
@@ -117,7 +121,7 @@ def deep_search(json, s, help_str='root'):
     else:
         try:
             if s in str(json):
-                # print '{}: {}'.format(help_str, str(json))
+                if debug: print '{}: {}'.format(help_str, str(json))
                 ret |= True
         except UnicodeEncodeError:
             pass
@@ -146,9 +150,11 @@ def main():
     else:
         accession_ids = get_accession_ids( args.url_or_file )
 
-    pipeline_sh = ENCODE_kundaje_pipeline.PipelineShellScript( args.pipeline_encode_lab, 
+    pipeline_sh = ENCODE_kundaje_pipeline.PipelineShellScript( args.dir, args.pipeline_encode_lab, 
         args.pipeline_encode_alias_prefix, args.pipeline_encode_award, os.path.abspath('.'), 
         args.pipeline_web_url_base, args.pipeline_chipseq_bds_path, args.pipeline_atac_bds_path)
+
+    os.system('mkdir -p {}'.format(args.dir))
 
     # download files for each accession id
     for accession_id in accession_ids:
@@ -168,12 +174,13 @@ def main():
         else:
             search_data = requests.get(ENCODE_BASE_URL+'/experiments/'+accession_id+'?format=json',
                 headers=HEADERS)
-        json_data_exp = search_data.json()        
+        json_data_exp = search_data.json()  
 
+        if json_data_exp['status']=='error':
+            print("Error: cannot access to accession {}".format(accession_id))
+            print(json_data_exp)
+            continue
         assembly = None
-        # if 'assembly' in json_data_exp: # if key assembly exists, get the first element
-        #     if len(json_data_exp['assembly'])>0:
-        #         assembly = json_data_exp['assembly'][0]
         if not assembly: # infer assembly from organism name...
             for s in args.assembly_map:
                 arr = s.replace('+',' ').split(':')
@@ -189,7 +196,7 @@ def main():
             assay_category = None
         award_rfa = args.pipeline_encode_award_rfa
 
-        # read files in accession        
+        # read files in accession
         files = {}
         for org_f in json_data_exp['original_files']:
             if args.encode_access_key_id: # if ENCODE key is given
@@ -197,44 +204,76 @@ def main():
             else:
                 search_file = requests.get(ENCODE_BASE_URL+org_f+'?format=json',headers=HEADERS)
             f = search_file.json()
-            status = f['status']
+            status = f['status'].lower().replace(' ','_')
             if status=='error': continue
-            file_type = f['file_type'].lower().split(' ')[0]
-            if file_type not in args.file_types: continue
+            arr = f['file_type'].lower().split(' ')
+            if len(arr)>1:
+                file_type = arr[0]
+                file_format = arr[1]
+            else:
+                file_type = arr[0]
+                file_format = file_type                
+            output_type = f['output_type'].lower().replace(' ','_')
+            valid = ('all' in args.file_types)
+            for ft in args.file_types:
+                arr = ft.split(':')
+                if len(arr)>2:
+                    if file_type==arr[0] and file_format==arr[1] and output_type==arr[2]:
+                        valid = True
+                        break                    
+                elif len(arr)>1:
+                    if (file_type==arr[0] or file_format==arr[0]) and \
+                        (file_format==arr[1] or output_type==arr[1]):
+                        valid = True
+                        break
+                else:                    
+                    if file_type==arr[0]:
+                        valid = True
+                        break
+            if not valid: continue            
             url_file = ENCODE_BASE_URL+f['href']
             file_accession_id = f['accession']
-            if file_type != 'fastq':
-                if args.ignore_released and status=='released': continue
-                if args.ignore_unpublished and status!='released': continue
-
+            if args.ignore_released and status=='released': continue
+            if args.ignore_unpublished and status!='released': continue
             if 'paired_end' in f:
                 pair = int(f['paired_end']) 
             else:
                 pair = -1
             if 'replicate' in f and 'biological_replicates_number'in f['replicate']:
-                bio_rep_id = int(f['replicate']['biological_replicate_number'])
-            elif 'biological_replicates'in f:
-                bio_rep_id = int(f['biological_replicates'][0])
-            else:
-                bio_rep_id = 0
+                bio_rep_id = f['replicate']['biological_replicate_number']
+            else: # 'biological_replicates'in f:
+                bio_rep_id = f['biological_replicates']
             if 'replicate' in f and 'technical_replicate_number'in f['replicate']:
-                tech_rep_id = int(f['replicate']['technical_replicate_number'])
-            elif 'technical_replicates' in f:
-                tech_rep_id = f['technical_replicates'][0]
+                tech_rep_id = f['replicate']['technical_replicate_number']
+            else: #if 'technical_replicates' in f:
+                tech_rep_id = f['technical_replicates']
+            if len(bio_rep_id)>1:
+                bio_rep_id=0
             else:
-                tech_rep_id = 0
-            if file_type == 'fastq' and tech_rep_id > 1: break;
-
+                bio_rep_id=int(bio_rep_id[0])
+            if type(tech_rep_id)==list:
+                tech_rep_id=tech_rep_id[0]
+            else:
+                tech_rep_id=tech_rep_id
+            file_assembly = f['assembly'] if 'assembly'in f else ''
+            if file_type == 'fastq':
+                if tech_rep_id != '1' and tech_rep_id != 1: break;
+            else:
+                if not 'all' in args.assemblies and not file_assembly in args.assemblies: break;
             # create directory for downloading
-            dir_suffix = '/'+accession_id
-            if bio_rep_id: dir_suffix += '/rep'+str(bio_rep_id)            
-            if pair > 0: dir_suffix += '/pair'+str(pair)
+            dir_suffix = accession_id+'/'+status+'/'+file_assembly+'/'+output_type+'/'+file_type
+            if file_type!=file_format: dir_suffix += '/'+file_format
+            if bio_rep_id>0: dir_suffix += '/rep'+str(bio_rep_id)            
+            if pair>0: dir_suffix += '/pair'+str(pair)
+            dir = args.dir+'/' + dir_suffix
 
-            dir = './' + dir_suffix
+            # print file_accession_id, file_assembly, file_type, file_format, output_type, bio_rep_id, tech_rep_id, pair, dir
+            # continue
+
             cmd_mkdir = 'mkdir -p {}'.format(dir)
             if not args.dry_run:
                 os.system(cmd_mkdir)
-
+            # continue
             # check number of downloading files
             while int(subprocess.check_output('ps aux | grep wget | wc -l', shell=True).strip('\n')) \
                         > args.max_download-1:

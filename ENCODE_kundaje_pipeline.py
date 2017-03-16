@@ -1,9 +1,10 @@
 import collections
 
 class PipelineShellScript(object):    
-    def __init__(self, lab, alias_prefix, award,
+    def __init__(self, dir, lab, alias_prefix, award,
             data_root_dir, web_url_base, chipseq_bds_path, atac_bds_path):
-        self.lab = lab
+        self.dir = dir
+        self.lab = lab        
         self.alias_prefix = alias_prefix
         self.award = award
         self.web_url_base = web_url_base
@@ -26,7 +27,8 @@ class PipelineShellScript(object):
             contents += str(sample)
         return contents
 
-    def write_to_file(self, fname='run_pipelines.sh'):
+    def write_to_file(self):
+        fname=self.dir+'/run_pipelines.sh'
         with open(fname,'w') as f:
             f.write(str(self))
 
