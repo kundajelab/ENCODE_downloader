@@ -195,7 +195,13 @@ def main():
         else:
             assay_category = None
         award_rfa = args.pipeline_encode_award_rfa
-
+        # write metadata file on each accession dir.
+        # with open(args.dir+'/'+accession_id+'/metadata.txt',mode='w') as f: 
+        #     f.write('assay_category={}\n'.format(assay_category))
+        #     f.write('assay_title={}\n'.format(assay_title))
+        #     f.write('assembly={}\n'.format(assembly))
+        with open(args.dir+'/'+accession_id+'/metadata.json',mode='w') as f:
+            f.write(json.dumps(json_data_exp, indent=4))
         # read files in accession
         files = {}
         for org_f in json_data_exp['original_files']:
