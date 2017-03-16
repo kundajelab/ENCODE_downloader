@@ -126,7 +126,7 @@ class PipelineSample(object):
                 if file_type==reserved_file_type:
                     if file_type == 'fastq':
                         if paired_with:
-                            _, pair2, _, rel_file2 = files[paired_with]
+                            _, _, _, pair2, _, rel_file2 = self.files[paired_with]
                             ret += 'FASTQ{}_{}{}={}\n'.format(bio_rep_id, pair, suffix, rel_file)
                             ret += 'FASTQ{}_{}{}={}\n'.format(bio_rep_id, pair2, suffix, rel_file2)
                             param_file += ' {} -fastq{}_{}{} $FASTQ{}_{}{} -fastq{}_{}{} $FASTQ{}_{}{}' \
