@@ -107,6 +107,16 @@ optional arguments:
 
 python ENCODE_downloader.py "https://www.encodeproject.org/search/?type=Experiment&assay_title=ATAC-seq&replicates.library.biosample.life_stage=postnatal&status=released" --pipeline-encode-lab /labs/anshul-kundaje/ --pipeline-encode-award /awards/U41HG007000/ --pipeline-encode-alias-prefix anshul-kundaje --pipeline-encode-award-rfa ENCODE3 --ignore-unpublished --encode-access-key-id [ENCODE_KEY_ID] --encode-secret-key [ENCODE_PASSWORD]
 
+## Using experiment URL
+
+python ENCODE_downloader.py "https://www.encodeproject.org/experiments/ENCSR000ELE" --pipeline-encode-lab /labs/anshul-kundaje/ --pipeline-encode-award /awards/U41HG007000/ --pipeline-encode-alias-prefix anshul-kundaje --pipeline-encode-award-rfa ENCODE3 --ignore-unpublished --encode-access-key-id [ENCODE_KEY_ID] --encode-secret-key [ENCODE_PASSWORD]
+
 ## Using accession ids file
 
 python ENCODE_downloader.py acc_ids.txt --pipeline-encode-lab /labs/anshul-kundaje/ --pipeline-encode-award /awards/U41HG007000/ --pipeline-encode-alias-prefix anshul-kundaje --pipeline-encode-award-rfa ENCODE3 --ignore-unpublished --encode-access-key-id [ENCODE_KEY_ID] --encode-secret-key [ENCODE_PASSWORD]
+
+## Using accession id and ids file (mixed)
+
+python ENCODE_downloader.py acc_ids.txt ENCSR000ELE --pipeline-encode-lab /labs/anshul-kundaje/ --pipeline-encode-award /awards/U41HG007000/ --pipeline-encode-alias-prefix anshul-kundaje --pipeline-encode-award-rfa ENCODE3 --ignore-unpublished --encode-access-key-id [ENCODE_KEY_ID] --encode-secret-key [ENCODE_PASSWORD]
+
+
