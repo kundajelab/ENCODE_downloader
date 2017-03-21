@@ -200,7 +200,11 @@ def main():
         #     f.write('assay_category={}\n'.format(assay_category))
         #     f.write('assay_title={}\n'.format(assay_title))
         #     f.write('assembly={}\n'.format(assembly))
-        with open(args.dir+'/'+accession_id+'/metadata.json',mode='w') as f:
+        dir = args.dir+'/'+accession_id
+        cmd_mkdir = 'mkdir -p {}'.format(dir)
+        if not args.dry_run:
+            os.system(cmd_mkdir)
+        with open(dir+'/metadata.json',mode='w') as f:
             f.write(json.dumps(json_data_exp, indent=4))
         # read files in accession
         files = {}

@@ -1,5 +1,5 @@
 run_pipelines*.sh
-accession_ids.txt
+accession_ids*.txt
 ignored_accession_ids.txt
 old
 *.pyc
