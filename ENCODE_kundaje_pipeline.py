@@ -106,6 +106,7 @@ class PipelineSample(object):
             elif self.__has_file_type('fastq'):
                 reserved_file_type = 'fastq'
             # mkdir
+            ret += 'TITLE=%s\n' % (self.acc_id)
             ret += 'WORKDIR=${PIPELINE_RUN_DIR}/%s; mkdir -p $WORKDIR; cd $WORKDIR\n' % (self.acc_id,)
             # files (key: file_accession_id, val:file_type, ...)
             cnt_fastq_to_be_pooled = collections.defaultdict(int)
@@ -150,11 +151,11 @@ class PipelineSample(object):
                 already_done.append(rel_file)
 
             # BDS command line and parameters
-            param = ('-title {} -species {} {} '+\
+            param = ('-title $TITLE -species {} {} '+\
                     '-ENCODE_accession {} '+\
                     '-ENCODE_assay_title {} '+\
                     '-ENCODE_assembly {} ').format(
-                        self.acc_id, self.species, param_file,
+                        self.species, param_file,
                         self.acc_id,
                         self.assay_title,
                         self.assembly)    

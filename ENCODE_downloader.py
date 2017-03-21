@@ -151,7 +151,7 @@ def main():
         accession_ids = get_accession_ids( args.url_or_file )
 
     pipeline_sh = ENCODE_kundaje_pipeline.PipelineShellScript( args.dir, args.pipeline_encode_lab, 
-        args.pipeline_encode_alias_prefix, args.pipeline_encode_award, os.path.abspath('.'), 
+        args.pipeline_encode_alias_prefix, args.pipeline_encode_award, os.path.abspath(args.dir), 
         args.pipeline_web_url_base, args.pipeline_chipseq_bds_path, args.pipeline_atac_bds_path)
 
     os.system('mkdir -p {}'.format(args.dir))
@@ -243,6 +243,7 @@ def main():
             if not valid: continue            
             url_file = ENCODE_BASE_URL+f['href']
             file_accession_id = f['accession']
+
             if args.ignore_released and status=='released': continue
             if args.ignore_unpublished and status!='released': continue
             if 'paired_end' in f:
@@ -266,8 +267,11 @@ def main():
             else:
                 tech_rep_id=tech_rep_id
             file_assembly = f['assembly'] if 'assembly'in f else ''
+            # print file_accession_id, file_assembly, file_type, file_format, output_type, bio_rep_id, tech_rep_id, pair, dir
+
             if file_type == 'fastq':
-                if tech_rep_id != '1' and tech_rep_id != 1: break;
+                # if tech_rep_id != '1' and tech_rep_id != 1: break;
+                pass
             else:
                 if not 'all' in args.assemblies and not file_assembly in args.assemblies: break;
             # create directory for downloading
@@ -309,7 +313,7 @@ def main():
                     time.sleep(0.25) # wait for 0.25 second per fastq
 
             # relative path for file (for pipeline)            
-            rel_file = os.getcwd() + dir_suffix +'/'+os.path.basename(url_file)
+            rel_file = args.dir + '/' + dir_suffix + '/' + os.path.basename(url_file)
 
             # check if paired with other fastq                
             paired_with = None
