@@ -1,3 +1,8 @@
+#!/usr/bin/env python
+'''
+    code written by Jin Lee (leepc12@gmail.com) in Anshul Kundaje's lab at Stanford University.
+'''
+
 import sys
 import os
 import time
@@ -19,9 +24,16 @@ def parse_arguments():
                                         If authentication information (--encode-access-key-id and --encode-secret-key) is given, \
                                         unpublished files only visible to submitters with valid authentication \
                                         can be downloaded.')
-    parser.add_argument('url_or_file', metavar='url-or-file', type=str,
-                            help='ENCODE search query URL starting with '+ENCODE_BASE_URL+'/search/? or a text file with accession IDs. \
-                            Make sure that URL is quotted in the command line.')
+    parser.add_argument('url_or_file', metavar='url-or-file', nargs='+', type=str,
+                            help='List of URLs/files/accession_ids \
+                                (ENCODE search/experiment URL, exp. accesion ids text file or exp. accession id). \
+                                Make sure that URL is quotted. \
+                                e.g. ENCSR000ELE exp_acc_ids.txt "https://www.encodeproject.org/search/?\
+                                type=Experiment&assay_term_name=DNase-seq\
+                                &replicates.library.biosample.donor.organism.scientific_name=Homo+sapiens\
+                                &biosample_term_name=CD14-positive+monocyte\
+                                &month_released=October%%2C+2011".\
+                            ')
     parser.add_argument('--dir', default='.', type=str,
                             help='[WORK_DIR] : Root directory for all downloaded genome data.')
     parser.add_argument('--file-types', nargs='+', default=['fastq'], type=str,
@@ -72,16 +84,7 @@ def parse_arguments():
         not args.encode_access_key_id and args.encode_secret_key:
         print("Both parameters --encode-access-key-id and --encode-secret-key must be specified together.")
         raise ValueError
-    if is_encode_search_query_url(args.url_or_file):
-        if not 'limit=all' in args.url_or_file:
-            args.url_or_file += '&limit=all'
-        if not 'format=json' in args.url_or_file:
-            args.url_or_file += '&format=json'
-    elif os.path.exists(args.url_or_file):
-        pass
-    else:
-        print("URL or text file is allowed for input ({}).".format(args.url_or_file))
-        raise ValueError
+    args.dir = os.path.abspath(args.dir)
     # make file_types lowercase
     for i, file_type in enumerate(args.file_types):
         args.file_types[i] = file_type.lower()
@@ -91,7 +94,15 @@ def is_encode_url( url ):
     return url.startswith(ENCODE_BASE_URL)
 
 def is_encode_search_query_url( url ):
-    return url.startswith(ENCODE_BASE_URL+'/search')
+    return url.startswith(ENCODE_BASE_URL+'/search/?')
+
+def is_encode_exp_url( url ):
+    return url.startswith(ENCODE_BASE_URL+'/experiments/ENCSR')
+
+def get_accession_id_from_encode_exp_url( url ):    
+    for s in url.split('/')[-2:]:
+        if s.startswith('ENC'): return s
+    return None
 
 def is_file_type_fastq( file_type ):
     return file_type.lower() in ['fastq']
@@ -137,18 +148,33 @@ def main():
     if args.encode_access_key_id: # if ENCODE key is given
         encode_auth = (args.encode_access_key_id, args.encode_secret_key)
     accession_ids = []
-    if is_encode_url(args.url_or_file):
-        # send query to ENCODE portal and parse
-        if args.encode_access_key_id: # if ENCODE key is given
-            search_data = requests.get(args.url_or_file, headers=HEADERS, auth=encode_auth)
+    # process multiple inputs
+    for url_or_file in args.url_or_file:
+        if is_encode_search_query_url(url_or_file):
+            if not 'limit=all' in url_or_file:
+                url_or_file += '&limit=all'
+            if not 'format=json' in url_or_file:
+                url_or_file += '&format=json'
+            # send query to ENCODE portal and parse
+            if args.encode_access_key_id: # if ENCODE key is given
+                search_data = requests.get(url_or_file, headers=HEADERS, auth=encode_auth)
+            else:
+                search_data = requests.get(url_or_file, headers=HEADERS)    
+            json_data_search = search_data.json() #json.loads(search_data)
+            for item in json_data_search['@graph']:
+                accession_id = item['accession']
+                accession_ids.append(accession_id)
+        elif is_encode_exp_url(url_or_file):
+            accession_id = get_accession_id_from_encode_exp_url(url_or_file)
+            accession_ids.append( accession_id )
+        elif os.path.exists(url_or_file) and os.path.isfile(url_or_file):
+            accession_ids += get_accession_ids( url_or_file )
+        elif url_or_file.startswith('ENCSR'):
+            accession_ids.append(url_or_file)
         else:
-            search_data = requests.get(args.url_or_file, headers=HEADERS)    
-        json_data_search = search_data.json() #json.loads(search_data)
-        for item in json_data_search['@graph']:
-            accession_id = item['accession']
-            accession_ids.append(accession_id)
-    else:
-        accession_ids = get_accession_ids( args.url_or_file )
+            print("Only URL, accession_ids_file or accession_id is allowed for input ({}).".format(url_or_file))
+            raise ValueError
+    print accession_ids
 
     pipeline_sh = ENCODE_kundaje_pipeline.PipelineShellScript( args.dir, args.pipeline_encode_lab, 
         args.pipeline_encode_alias_prefix, args.pipeline_encode_award, os.path.abspath(args.dir), 
