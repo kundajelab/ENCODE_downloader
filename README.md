@@ -10,7 +10,9 @@ Get your access key ID and secret key from the portal homepage menu YourID->Prof
 # Usage
 
 ```
-usage: ENCODE downloader [-h] [--file-types FILE_TYPES [FILE_TYPES ...]]
+usage: ENCODE downloader [-h] [--dir DIR]
+                         [--file-types FILE_TYPES [FILE_TYPES ...]]
+                         [--assemblies ASSEMBLIES [ASSEMBLIES ...]]
                          [--encode-access-key-id ENCODE_ACCESS_KEY_ID]
                          [--encode-secret-key ENCODE_SECRET_KEY]
                          [--ignored-accession-ids-file IGNORED_ACCESSION_IDS_FILE]
@@ -25,25 +27,36 @@ usage: ENCODE downloader [-h] [--file-types FILE_TYPES [FILE_TYPES ...]]
                          [--pipeline-encode-award-rfa PIPELINE_ENCODE_AWARD_RFA]
                          [--pipeline-encode-alias-prefix PIPELINE_ENCODE_ALIAS_PREFIX]
                          [--ignore-released | --ignore-unpublished]
-                         url-or-file
+                         url-or-file [url-or-file ...]
 
 Downloads genome data files from the ENCODE portal and save them under
 [WORK_DIR]/[ACCESSION_ID]/. Also generates Kundaje lab BDS pipeline shell
-script for all samples (for fastq and bam only). If authenticaion information
+script for all samples (for fastq and bam only). If authentication information
 (--encode-access-key-id and --encode-secret-key) is given, unpublished files
 only visible to submitters with valid authentication can be downloaded.
 
 positional arguments:
-  url-or-file           Text file with accession IDs or ENCODE search query
-                        URL starting with
-                        https://www.encodeproject.org/search/?.
+  url-or-file           List of URLs/files/accession_ids (ENCODE
+                        search/experiment URL, exp. accesion ids text file or
+                        exp. accession id). Make sure that URL is quotted.
+                        e.g. ENCSR000ELE exp_acc_ids.txt
+                        "https://www.encodeproject.org/search/?
+                        type=Experiment&assay_term_name=DNase-seq &replicates.
+                        library.biosample.donor.organism.scientific_name=Homo+
+                        sapiens &biosample_term_name=CD14-positive+monocyte
+                        &month_released=October%2C+2011".
 
 optional arguments:
   -h, --help            show this help message and exit
+  --dir DIR             [WORK_DIR] : Root directory for all downloaded genome
+                        data.
   --file-types FILE_TYPES [FILE_TYPES ...]
                         List of file types to be downloaded: fastq (default),
                         bam, bed, bigWig, bigBed, ... e.g. --file-types fastq
                         bam.
+  --assemblies ASSEMBLIES [ASSEMBLIES ...]
+                        Assemblies (reference used for mapping) allowed. e.g.
+                        --assemblies GRCh38 hg19.
   --encode-access-key-id ENCODE_ACCESS_KEY_ID
                         To download unpublished files visible to submitters
                         vith a valid authentication. Get your access key ID
