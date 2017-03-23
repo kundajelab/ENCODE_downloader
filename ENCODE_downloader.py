@@ -212,27 +212,17 @@ def main():
                 arr = s.replace('+',' ').split(':')
                 if deep_search(json_data_exp, arr[0]):
                     assembly = arr[1]
-                    print('Warning: inferred assembly ({}) from keys and values in json (e.g. organism name)...'.format(assembly))
+                    # print('Warning: inferred assembly ({}) from keys and values in json (e.g. organism name)...'.format(assembly))
                     break
-
+        print('assembly: {}'.format(assembly))
         assay_title = json_data_exp['assay_title']
         if 'assay_category' in json_data_exp:        
             assay_category = json_data_exp['assay_category']
         else:
             assay_category = None
         award_rfa = args.pipeline_encode_award_rfa
-        # write metadata file on each accession dir.
-        # with open(args.dir+'/'+accession_id+'/metadata.txt',mode='w') as f: 
-        #     f.write('assay_category={}\n'.format(assay_category))
-        #     f.write('assay_title={}\n'.format(assay_title))
-        #     f.write('assembly={}\n'.format(assembly))
-        dir = args.dir+'/'+accession_id
-        cmd_mkdir = 'mkdir -p {}'.format(dir)
-        if not args.dry_run:
-            os.system(cmd_mkdir)
-        with open(dir+'/metadata.json',mode='w') as f:
-            f.write(json.dumps(json_data_exp, indent=4))
         # read files in accession
+        downloaded_this_exp_accession = False
         files = {}
         for org_f in json_data_exp['original_files']:
             if args.encode_access_key_id: # if ENCODE key is given
@@ -242,6 +232,7 @@ def main():
             f = search_file.json()
             status = f['status'].lower().replace(' ','_')
             if status=='error': continue
+            file_assembly = f['assembly'] if 'assembly'in f else ''
             arr = f['file_type'].lower().split(' ')
             if len(arr)>1:
                 file_type = arr[0]
@@ -284,35 +275,36 @@ def main():
                 tech_rep_id = f['replicate']['technical_replicate_number']
             else: #if 'technical_replicates' in f:
                 tech_rep_id = f['technical_replicates']
-            if len(bio_rep_id)>1:
-                bio_rep_id=0
-            else:
-                bio_rep_id=int(bio_rep_id[0])
-            if type(tech_rep_id)==list:
+            # if len(bio_rep_id)>1:
+            #     bio_rep_id=0
+            # elif len(bio_rep_id)>0:
+            #     bio_rep_id=int(bio_rep_id[0])
+            # else:
+            #     bio_rep_id=0
+            if type(tech_rep_id)==list and len(tech_rep_id)>0:
                 tech_rep_id=tech_rep_id[0]
             else:
-                tech_rep_id=tech_rep_id
-            file_assembly = f['assembly'] if 'assembly'in f else ''
-            # print file_accession_id, file_assembly, file_type, file_format, output_type, bio_rep_id, tech_rep_id, pair, dir
+                tech_rep_id=tech_rep_id            
+            # print file_accession_id, file_assembly, file_type, file_format, output_type, bio_rep_id, tech_rep_id, pair
 
             if file_type == 'fastq':
                 # if tech_rep_id != '1' and tech_rep_id != 1: break;
                 pass
             else:
-                if not 'all' in args.assemblies and not file_assembly in args.assemblies: break;
+                if not 'all' in args.assemblies and not file_assembly in args.assemblies: continue;
             # create directory for downloading
             dir_suffix = accession_id+'/'+status+'/'+file_assembly+'/'+output_type+'/'+file_type
             if file_type!=file_format: dir_suffix += '/'+file_format
-            if bio_rep_id>0: dir_suffix += '/rep'+str(bio_rep_id)            
+            # if bio_rep_id>0: dir_suffix += '/rep'+str(bio_rep_id)
+            dir_suffix += '/rep'+'_rep'.join([str(i) for i in bio_rep_id])
             if pair>0: dir_suffix += '/pair'+str(pair)
             dir = args.dir+'/' + dir_suffix
 
             # print file_accession_id, file_assembly, file_type, file_format, output_type, bio_rep_id, tech_rep_id, pair, dir
             # continue
 
-            cmd_mkdir = 'mkdir -p {}'.format(dir)
             if not args.dry_run:
-                os.system(cmd_mkdir)
+                os.system('mkdir -p {}'.format(dir))
             # continue
             # check number of downloading files
             while int(subprocess.check_output('ps aux | grep wget | wc -l', shell=True).strip('\n')) \
@@ -347,7 +339,13 @@ def main():
                 paired_with = f['paired_with'].split('/')[2]
 
             # for fastq, store files with the same bio_rep_id and pair: these files will be pooled later in a pipeline
-            files[file_accession_id] = (file_type, status, bio_rep_id, pair, paired_with, rel_file)
+            files[file_accession_id] = (file_type, status, bio_rep_id[0], pair, paired_with, rel_file)
+            downloaded_this_exp_accession = True
+
+        if not args.dry_run and downloaded_this_exp_accession:
+            os.system('mkdir -p {}'.format(args.dir+'/'+accession_id))
+            with open(args.dir+'/'+accession_id+'/metadata.json',mode='w') as f:
+                f.write(json.dumps(json_data_exp, indent=4))
 
         # print accession_id, assembly, assay_title, award_rfa, files
         pipeline_sh.add_sample(accession_id, assembly, assay_title, assay_category, award_rfa, files)
