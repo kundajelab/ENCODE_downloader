@@ -275,12 +275,6 @@ def main():
                 tech_rep_id = f['replicate']['technical_replicate_number']
             else: #if 'technical_replicates' in f:
                 tech_rep_id = f['technical_replicates']
-            # if len(bio_rep_id)>1:
-            #     bio_rep_id=0
-            # elif len(bio_rep_id)>0:
-            #     bio_rep_id=int(bio_rep_id[0])
-            # else:
-            #     bio_rep_id=0
             if type(tech_rep_id)==list and len(tech_rep_id)>0:
                 tech_rep_id=tech_rep_id[0]
             else:
@@ -296,7 +290,8 @@ def main():
             dir_suffix = accession_id+'/'+status+'/'+file_assembly+'/'+output_type+'/'+file_type
             if file_type!=file_format: dir_suffix += '/'+file_format
             # if bio_rep_id>0: dir_suffix += '/rep'+str(bio_rep_id)
-            dir_suffix += '/rep'+'_rep'.join([str(i) for i in bio_rep_id])
+            if bio_rep_id:
+                dir_suffix += '/rep'+'_rep'.join([str(i) for i in bio_rep_id])
             if pair>0: dir_suffix += '/pair'+str(pair)
             dir = args.dir+'/' + dir_suffix
 
@@ -339,7 +334,8 @@ def main():
                 paired_with = f['paired_with'].split('/')[2]
 
             # for fastq, store files with the same bio_rep_id and pair: these files will be pooled later in a pipeline
-            files[file_accession_id] = (file_type, status, bio_rep_id[0], pair, paired_with, rel_file)
+            if bio_rep_id:
+                files[file_accession_id] = (file_type, status, bio_rep_id[0], pair, paired_with, rel_file)
             downloaded_this_exp_accession = True
 
         if not args.dry_run and downloaded_this_exp_accession:
