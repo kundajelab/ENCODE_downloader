@@ -48,6 +48,8 @@ def parse_arguments():
                             help='ENCODE secret key (--encode-access-key-id must be specified).' )
     parser.add_argument('--ignored-accession-ids-file', type=str,
                             help='Text file with ignored accession IDs.')    
+    parser.add_argument('--pooled-rep-only', action="store_true",\
+                            help='Download genome data from pooled replicates only.')
     parser.add_argument('--dry-run', action="store_true",\
                             help='Dry-run: downloads nothing, but generates pipeline shell script.')
     parser.add_argument('--dry-run-list-accession-ids', action="store_true",
@@ -279,13 +281,14 @@ def main():
                 tech_rep_id=tech_rep_id[0]
             else:
                 tech_rep_id=tech_rep_id            
+            if args.pooled_rep_only and type(bio_rep_id)==list and len(bio_rep_id)<2:
+                continue
             # print file_accession_id, file_assembly, file_type, file_format, output_type, bio_rep_id, tech_rep_id, pair
-
             if file_type == 'fastq':
                 # if tech_rep_id != '1' and tech_rep_id != 1: break;
                 pass
             else:
-                if not 'all' in args.assemblies and not file_assembly in args.assemblies: continue;
+                if not 'all' in args.assemblies and not file_assembly in args.assemblies: continue
             # create directory for downloading
             dir_suffix = accession_id+'/'+status+'/'+file_assembly+'/'+output_type+'/'+file_type
             if file_type!=file_format: dir_suffix += '/'+file_format

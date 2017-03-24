@@ -16,7 +16,8 @@ usage: ENCODE downloader [-h] [--dir DIR]
                          [--encode-access-key-id ENCODE_ACCESS_KEY_ID]
                          [--encode-secret-key ENCODE_SECRET_KEY]
                          [--ignored-accession-ids-file IGNORED_ACCESSION_IDS_FILE]
-                         [--dry-run] [--dry-run-list-accession-ids]
+                         [--pooled-rep-only] [--dry-run]
+                         [--dry-run-list-accession-ids]
                          [--max-download MAX_DOWNLOAD]
                          [--assembly-map ASSEMBLY_MAP [ASSEMBLY_MAP ...]]
                          [--pipeline-atac-bds-path PIPELINE_ATAC_BDS_PATH]
@@ -67,6 +68,7 @@ optional arguments:
                         specified).
   --ignored-accession-ids-file IGNORED_ACCESSION_IDS_FILE
                         Text file with ignored accession IDs.
+  --pooled-rep-only     Download genome data from pooled replicates only.
   --dry-run             Dry-run: downloads nothing, but generates pipeline
                         shell script.
   --dry-run-list-accession-ids
@@ -99,6 +101,13 @@ optional arguments:
                         name is recommended). e.g. anshul-kundaje)
   --ignore-released     Ignore released data (except fastqs).
   --ignore-unpublished  Ignore unpublished data.
+```
+
+# Requirements
+
+1) Python requests
+```
+pip install requests
 ```
 
 # Examples
