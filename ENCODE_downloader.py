@@ -140,6 +140,15 @@ def deep_search(json, s, help_str='root',debug=False):
             pass
     return ret
 
+def get_depth_one( json_obj ):
+    result = {}
+       # add info to metadata json
+    for key in json_obj:
+        val = json_obj[key]
+        if not type(val)==dict and not type(val)==list:
+            result[key] = val
+    return result
+
 def main():
     args = parse_arguments()
 
@@ -225,7 +234,10 @@ def main():
         award_rfa = args.pipeline_encode_award_rfa
         # read files in accession
         downloaded_this_exp_accession = False
-        files = {}
+        
+        # init metadata object
+        metadata = get_depth_one(json_data_exp)
+        metadata['files'] = {} # file info
         for org_f in json_data_exp['original_files']:
             if args.encode_access_key_id: # if ENCODE key is given
                 search_file = requests.get(ENCODE_BASE_URL+org_f+'?format=json',headers=HEADERS,auth=encode_auth)
@@ -337,17 +349,27 @@ def main():
                 paired_with = f['paired_with'].split('/')[2]
 
             # for fastq, store files with the same bio_rep_id and pair: these files will be pooled later in a pipeline
-            if bio_rep_id:
-                files[file_accession_id] = (file_type, status, bio_rep_id[0], pair, paired_with, rel_file)
+            if bio_rep_id:                
+                metadata['files'][file_accession_id] = dict(
+                    file_type=file_type,
+                    file_format=file_format,
+                    output_type=output_type,
+                    status=status,
+                    bio_rep_id=bio_rep_id,
+                    pair=pair,
+                    paired_with=paired_with,
+                    rel_file=rel_file)
             downloaded_this_exp_accession = True
 
         if not args.dry_run and downloaded_this_exp_accession:
             os.system('mkdir -p {}'.format(args.dir+'/'+accession_id))
-            with open(args.dir+'/'+accession_id+'/metadata.json',mode='w') as f:
-                f.write(json.dumps(json_data_exp, indent=4))
+            with open(args.dir+'/'+accession_id+'/metadata.org.json',mode='w') as fp:
+                fp.write(json.dumps(json_data_exp, indent=4))
+            with open(args.dir+'/'+accession_id+'/metadata.json',mode='w') as fp:
+                fp.write(json.dumps(metadata, indent=4))
 
         # print accession_id, assembly, assay_title, award_rfa, files
-        pipeline_sh.add_sample(accession_id, assembly, assay_title, assay_category, award_rfa, files)
+        pipeline_sh.add_sample(accession_id, assembly, assay_title, assay_category, award_rfa, metadata['files'])
 
     pipeline_sh.write_to_file()
 

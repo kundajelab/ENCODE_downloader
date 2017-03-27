@@ -85,10 +85,10 @@ class PipelineSample(object):
         return ret
 
     def __has_file_type(self,file_type):
-        return sum([self.files[file_acc_id][0]==file_type for file_acc_id in self.files])
+        return sum([self.files[file_acc_id]['file_type']==file_type for file_acc_id in self.files])
 
     def __get_file_types(self):
-        return list(set([self.files[file_acc_id][0] for file_acc_id in self.files]))
+        return list(set([self.files[file_acc_id]['file_type'] for file_acc_id in self.files]))
 
     def __str__(self):
         # header
@@ -113,7 +113,12 @@ class PipelineSample(object):
             already_done = []
             param_file = ''
             for file_acc_id in self.files:
-                file_type, status, bio_rep_id, pair, paired_with, rel_file = self.files[file_acc_id]
+                file_type = self.files[file_acc_id]['file_type']
+                status = self.files[file_acc_id]['status']
+                bio_rep_id = self.files[file_acc_id]['bio_rep_id'][0]
+                pair = self.files[file_acc_id]['pair']
+                paired_with = self.files[file_acc_id]['paired_with']
+                rel_file = self.files[file_acc_id]['rel_file']
                 if rel_file in already_done:
                     continue                
                 cnt_fastq_to_be_pooled[bio_rep_id] += 1
@@ -129,7 +134,9 @@ class PipelineSample(object):
                 if file_type==reserved_file_type:
                     if file_type == 'fastq':
                         if paired_with:
-                            _, _, _, pair2, _, rel_file2 = self.files[paired_with]
+                            pair2 = self.files[paired_with]['pair']
+                            rel_file2 = self.files[paired_with]['rel_file']
+
                             ret += 'FASTQ{}_{}{}={}\n'.format(bio_rep_id, pair, suffix, rel_file)
                             ret += 'FASTQ{}_{}{}={}\n'.format(bio_rep_id, pair2, suffix, rel_file2)
                             param_file += ' {} -fastq{}_{}{} $FASTQ{}_{}{} -fastq{}_{}{} $FASTQ{}_{}{}' \
