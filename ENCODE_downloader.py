@@ -192,7 +192,8 @@ def main():
         args.pipeline_web_url_base, args.pipeline_chipseq_bds_path, args.pipeline_atac_bds_path)
 
     os.system('mkdir -p {}'.format(args.dir))
-
+    # ordered dict to write metadata table (including all accessions)
+    all_file_metadata = collections.OrderedDict()
     # download files for each accession id
     for accession_id in accession_ids:
         # get accession info
@@ -342,6 +343,7 @@ def main():
 
             # relative path for file (for pipeline)            
             rel_file = args.dir + '/' + dir_suffix + '/' + os.path.basename(url_file)
+            rel_file = rel_file.replace('//','/')
 
             # check if paired with other fastq                
             paired_with = None
@@ -367,9 +369,43 @@ def main():
                 fp.write(json.dumps(json_data_exp, indent=4))
             with open(args.dir+'/'+accession_id+'/metadata.json',mode='w') as fp:
                 fp.write(json.dumps(metadata, indent=4))
+            all_file_metadata[accession_id] = metadata['files']
 
         # print accession_id, assembly, assay_title, award_rfa, files
         pipeline_sh.add_sample(accession_id, assembly, assay_title, assay_category, award_rfa, metadata['files'])
+
+    # make TSV for all downloaded files
+    if not args.dry_run:        
+        # count max. number of files per exp. accession
+        max_num_files = max( [len(all_file_metadata[acc_id]) for acc_id in all_file_metadata] )
+        # table header
+        header = 'accession\t'+\
+            'description(comma-delimited; file_acc_id:status:file_type:file_format:output_type:bio_rep_id:pair,...)\tfile'+ \
+            '\tfile'.join([str(i+1) for i in range(max_num_files)]) + '\n'
+        contents = ''
+        # table contents        
+        for accession_id in all_file_metadata:
+            file_metadata = all_file_metadata[accession_id]
+            desc = ''
+            tmp_cnt = 0
+            for file_acc_id in file_metadata:
+                tmp_cnt += 1
+                metadata = file_metadata[file_acc_id]
+                desc += ':'.join(   [file_acc_id,
+                                    metadata['status'],
+                                    metadata['file_type'],
+                                    metadata['file_format'],
+                                    metadata['output_type'],
+                                    metadata['file_type'],
+                                    '_'.join(str(x) for x in metadata['bio_rep_id']),
+                                    str(metadata['pair']) ])
+                if tmp_cnt<len(file_metadata):
+                    desc += ','
+            files = '\t'.join( [file_metadata[a]['rel_file'] for a in file_metadata] )
+            contents += '\t'.join([accession_id,desc,files]) + '\n'
+        with open(args.dir+'/all_files.tsv',mode='w') as fp:
+            fp.write(header)
+            fp.write(contents)
 
     pipeline_sh.write_to_file()
 
