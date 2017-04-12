@@ -134,7 +134,7 @@ def deep_search(json, s, help_str='root',debug=False):
     else:
         try:
             if s in str(json):
-                if debug: print '{}: {}'.format(help_str, str(json))
+                if debug: print('{}: {}'.format(help_str, str(json)))
                 ret |= True
         except UnicodeEncodeError:
             pass
@@ -185,7 +185,7 @@ def main():
         else:
             print("Only URL, accession_ids_file or accession_id is allowed for input ({}).".format(url_or_file))
             raise ValueError
-    print accession_ids
+    print(accession_ids)
 
     pipeline_sh = ENCODE_kundaje_pipeline.PipelineShellScript( args.dir, args.pipeline_encode_lab, 
         args.pipeline_encode_alias_prefix, args.pipeline_encode_award, os.path.abspath(args.dir), 
@@ -318,9 +318,10 @@ def main():
                 os.system('mkdir -p {}'.format(dir))
             # continue
             # check number of downloading files
-            while int(subprocess.check_output('ps aux | grep wget | wc -l', shell=True).strip('\n')) \
+            # while int(subprocess.check_output('ps aux | grep wget | wc -l', shell=True).strip('\n')) \
+            while int(subprocess.check_output('ps aux | grep wget | wc -l', shell=True)) \
                         > args.max_download-1:
-                print '# of downloads exceeded the limit ({}), retrying in 20 seconds...'.format(args.max_download)
+                print('# of downloads exceeded the limit ({}), retrying in 20 seconds...'.format(args.max_download))
                 time.sleep(20)
 
             # download file
