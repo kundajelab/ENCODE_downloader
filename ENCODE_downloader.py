@@ -376,7 +376,7 @@ def main():
         pipeline_sh.add_sample(accession_id, assembly, assay_title, assay_category, award_rfa, metadata['files'])
 
     # make TSV for all downloaded files
-    if not args.dry_run:        
+    if not args.dry_run and all_file_metadata:
         # count max. number of files per exp. accession
         max_num_files = max( [len(all_file_metadata[acc_id]) for acc_id in all_file_metadata] )
         # table header
