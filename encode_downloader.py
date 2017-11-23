@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 '''
-    code written by Jin Lee (leepc12@gmail.com) in Anshul Kundaje's lab at Stanford University.
+Written by Jin Lee (leepc12@gmail.com) 
+Anshul Kundaje's lab at Stanford University.
 '''
 
 import sys
@@ -12,7 +13,6 @@ import subprocess
 import collections
 import re
 import argparse
-import ENCODE_kundaje_pipeline
 
 ENCODE_BASE_URL = 'https://www.encodeproject.org'
 
@@ -37,8 +37,14 @@ def parse_arguments():
     parser.add_argument('--dir', default='.', type=str,
                             help='[WORK_DIR] : Root directory for all downloaded genome data.')
     parser.add_argument('--file-types', nargs='+', default=['fastq'], type=str,
-                            help='List of file types to be downloaded: fastq (default), bam, bed, bigWig, bigBed, ... \
-                            e.g. --file-types fastq bam.')
+                            help='List of file types to be downloaded: fastq (default). \
+                            You can define file_type, file_type:file_format:output_type or \
+                            file_type:output_type. \
+                            Supported file_type: fastq, bam, bed, bigWig, bigBed. \
+                            Supported file_format: fastq, bam, bed, bigWig, bigBed. \
+                            Output file_format: alignments, unfiltered alignments, ... \
+                            For details, checkout ENCODE portal\'s schema. \
+                            e.g. --file-types fastq "bam:unfiltered alignments".')
     parser.add_argument('--assemblies', nargs='+', default=['all'], type=str,
                             help='Assemblies (reference used for mapping) allowed. e.g. --assemblies GRCh38 hg19.')
     parser.add_argument('--encode-access-key-id', type=str,
@@ -60,21 +66,6 @@ def parse_arguments():
     parser.add_argument('--assembly-map', nargs='+', default=['Mus+musculus:mm10','Homo+sapiens:GRCh38'], type=str,
                             help='List of strings to infer ENCODE assembly from species name; [SPECIES_NAME]:[ASSEMBLY]. \
                             e.g. --assembly-map Mus+musculus:mm10 Homo+sapiens:GRCh38')
-    parser.add_argument('--pipeline-atac-bds-path', type=str, default='${ATAC_BDS_DIR}/atac.bds',
-                            help='Path for atac.bds.')
-    parser.add_argument('--pipeline-chipseq-bds-path', type=str, default='${CHIPSEQ_BDS_DIR}/chipseq.bds',
-                            help='Path for chipseq.bds.')
-    parser.add_argument('--pipeline-web-url-base', type=str,
-                            help='URL base for browser tracks. e.g. http://mitra.stanford.edu/kundaje')
-    parser.add_argument('--pipeline-encode-lab', type=str, default='',
-                            help='ENCODE lab for pipeline. e.g. /labs/anshul-kundaje/')
-    parser.add_argument('--pipeline-encode-award', type=str, default='',
-                            help='ENCODE award for pipeline. e.g. /awards/U41HG007000/')
-    parser.add_argument('--pipeline-encode-award-rfa', type=str, default='',
-                            help='ENCODE award RFA for pipeline. e.g. ENCODE3')
-    parser.add_argument('--pipeline-encode-alias-prefix', type=str, default='',
-                            help='ENCODE alias prefix for pipeline (pipeline output files will have aliases of [prefix]:[filename], \
-                            lab name is recommended). e.g. anshul-kundaje)')
     group_ignore_status = parser.add_mutually_exclusive_group()
     group_ignore_status.add_argument('--ignore-released', action='store_true', \
                             help='Ignore released data (except fastqs).')
@@ -187,10 +178,6 @@ def main():
             raise ValueError
     print(accession_ids)
 
-    pipeline_sh = ENCODE_kundaje_pipeline.PipelineShellScript( args.dir, args.pipeline_encode_lab, 
-        args.pipeline_encode_alias_prefix, args.pipeline_encode_award, os.path.abspath(args.dir), 
-        args.pipeline_web_url_base, args.pipeline_chipseq_bds_path, args.pipeline_atac_bds_path)
-
     os.system('mkdir -p {}'.format(args.dir))
     # ordered dict to write metadata table (including all accessions)
     all_file_metadata = collections.OrderedDict()
@@ -232,7 +219,6 @@ def main():
             assay_category = json_data_exp['assay_category']
         else:
             assay_category = None
-        award_rfa = args.pipeline_encode_award_rfa
         # read files in accession
         downloaded_this_exp_accession = False
         
@@ -240,10 +226,26 @@ def main():
         metadata = get_depth_one(json_data_exp)
         metadata['files'] = {} # file info
         for org_f in json_data_exp['original_files']:
-            if args.encode_access_key_id: # if ENCODE key is given
-                search_file = requests.get(ENCODE_BASE_URL+org_f+'?format=json',headers=HEADERS,auth=encode_auth)
-            else:
-                search_file = requests.get(ENCODE_BASE_URL+org_f+'?format=json',headers=HEADERS)
+            # if args.encode_access_key_id: # if ENCODE key is given
+            #     search_file = requests.get(ENCODE_BASE_URL+org_f+'?format=json',headers=HEADERS,auth=encode_auth)
+            # else:
+            #     search_file = requests.get(ENCODE_BASE_URL+org_f+'?format=json',headers=HEADERS)
+            while True:
+                try:
+                    if args.encode_access_key_id: # if ENCODE key is given
+                        search_file = requests.get(ENCODE_BASE_URL+org_f+'?format=json',headers=HEADERS,auth=encode_auth)
+                    else:
+                        search_file = requests.get(ENCODE_BASE_URL+org_f+'?format=json',headers=HEADERS)
+                except:
+                    print('Exception caught, retrying in 120 seconds...')
+                else:
+                    break
+                retry_cnt += 1
+                if retry_cnt>100:
+                    raise Exception('Exceeded maximum number of retries {}. Aborting...'.format(retry_cnt-1))
+                print('Retrial: {}'.format(retry_cnt))
+                time.sleep(120)
+
             f = search_file.json()
             status = f['status'].lower().replace(' ','_')
             if status=='error': continue
@@ -372,9 +374,6 @@ def main():
                 fp.write(json.dumps(metadata, indent=4))
             all_file_metadata[accession_id] = metadata['files']
 
-        # print accession_id, assembly, assay_title, award_rfa, files
-        pipeline_sh.add_sample(accession_id, assembly, assay_title, assay_category, award_rfa, metadata['files'])
-
     # make TSV for all downloaded files
     if not args.dry_run and all_file_metadata:
         # count max. number of files per exp. accession
@@ -407,8 +406,6 @@ def main():
         with open(args.dir+'/all_files.tsv',mode='w') as fp:
             fp.write(header)
             fp.write(contents)
-
-    pipeline_sh.write_to_file()
 
 if __name__=='__main__':
     main()
