@@ -4,6 +4,7 @@ import json
 import os
 import sys
 import argparse
+import math
 import collections
 
 PIPELINE_SH_ITEM_TEMPLATE = '''
@@ -12,7 +13,8 @@ TITLE={title}
 WORKDIR={pipeline_out_root_dir}/{title}; mkdir -p $WORKDIR; cd $WORKDIR
 bds_scr {title} {pipeline_bds_script} -title {title} -species {species} \\
 {input_file_param}
-{input_end_param}
+{input_end_param} {pipeline_extra_param}
+sleep 0.5
 '''
 
 def parse_arguments():
@@ -26,21 +28,26 @@ def parse_arguments():
                             help='Root directory where you downloaded control data.')
     parser.add_argument('--exp-id-to-ctl-id-file', type=str,
                             help='File with exp_id[TAB]ctl_id in each line. Only for samples with controls.')
-    parser.add_argument('--pipeline-sh-filename', type=str, default="run_pipelines.sh",
-                            help='Path for atac.bds or chipseq.bds.')
-    parser.add_argument('--pipeline-out-root-dir', type=str, default='', 
-                            help='Pipeline output root directory.')
-    parser.add_argument('--pipeline-bds-script', type=str, required=True,
-                            help='Path for atac.bds or chipseq.bds.')
     parser.add_argument('--exp-file-type', type=str, required=True,
                             choices=['fastq','bam','filt_bam'],
                             help='Choose file_type of experiment replicates to run pipelines. \
                                 Files with other types will be ignored exp. replicates.')
     parser.add_argument('--ctl-file-type', type=str,
                             choices=['fastq','bam','filt_bam'],
-                            help='Optinoal. If not defined then --exp-file-type will be useds for controls. \
+                            help='Optional. If not defined then --exp-file-type will be useds for controls. \
                                 Choose file_type of control replicates to run pipelines. \
                                 Files with other types will be ignored for controls.')
+    parser.add_argument('--pipeline-bds-script', type=str, required=True,
+                            help='Path for atac.bds or chipseq.bds.')
+    parser.add_argument('--pipeline-extra-param', type=str, default='',
+                            help='Extra parameter appended to the command line for BDS pipeline.\
+                            Make sure that it is quoted.')
+    parser.add_argument('--pipeline-out-root-dir', type=str, default='', 
+                            help='Pipeline output root directory.')
+    parser.add_argument('--pipeline-sh-filename-prefix', type=str, default="run_pipelines",
+                            help='Prefix of path for .sh')
+    parser.add_argument('--pipeline-number-of-samples-per-sh', type=int, default=50,
+                            help='Number of samples per .sh.')
     args = parser.parse_args()
 
     if args.ctl_data_root_dir and not args.exp_id_to_ctl_id_file or \
@@ -250,73 +257,76 @@ def main():
     args, ctl_exists = parse_arguments()
 
     mkdir_p(args.pipeline_out_root_dir)
-    out_sh = os.path.join(args.pipeline_out_root_dir,
-                        args.pipeline_sh_filename)
+
     if ctl_exists:
         map_exp_to_ctl = read_exp_to_ctl_file(args.exp_id_to_ctl_id_file)
 
-    with open(out_sh,'w') as fp:
-        sn = 0
-        exp_ids = read_acc_ids_file(args.exp_acc_ids_file)
-        for exp_id in exp_ids:            
-            if exp_id.startswith('#'): continue
-            print('==== {} ===='.format(exp_id))
-            sn += 1
-            exp_metadata_json_file = '{}/{}/metadata.json'.format(
-                                args.exp_data_root_dir, exp_id)
-            exp_metadata_org_json_file = '{}/{}/metadata.org.json'.format(
-                                args.exp_data_root_dir, exp_id)
-            exp_metadata_json = parse_metadata_json_file(
-                exp_metadata_json_file,
-                args.exp_file_type)
+    sh_items = []
 
-            species = infer_species(exp_metadata_org_json_file)
+    sn = 0
+    exp_ids = read_acc_ids_file(args.exp_acc_ids_file)
+    for exp_id in exp_ids:            
+        if exp_id.startswith('#'): continue
+        print('==== {} ===='.format(exp_id))
+        sn += 1
+        exp_metadata_json_file = '{}/{}/metadata.json'.format(
+                            args.exp_data_root_dir, exp_id)
+        exp_metadata_org_json_file = '{}/{}/metadata.org.json'.format(
+                            args.exp_data_root_dir, exp_id)
+        exp_metadata_json = parse_metadata_json_file(
+            exp_metadata_json_file,
+            args.exp_file_type)
 
-            exp_paired_end = is_paired_end(exp_metadata_org_json_file)
-            if exp_paired_end:
-                input_end_param = '-pe '
+        species = infer_species(exp_metadata_org_json_file)
+
+        exp_paired_end = is_paired_end(exp_metadata_org_json_file)
+        if exp_paired_end:
+            input_end_param = '-pe '
+        else:
+            input_end_param = '-se '
+
+        if ctl_exists and exp_id in map_exp_to_ctl:
+            ctl_id = map_exp_to_ctl[exp_id]
+            ctl_metadata_json_file = '{}/{}/metadata.json'.format(
+                                args.ctl_data_root_dir, ctl_id)
+            ctl_metadata_org_json_file = '{}/{}/metadata.org.json'.format(
+                                args.ctl_data_root_dir, ctl_id)
+            ctl_metadata_json = parse_metadata_json_file(
+                ctl_metadata_json_file,
+                args.ctl_file_type if args.ctl_file_type else args.exp_file_type)
+            ctl_paired_end = is_paired_end(ctl_metadata_org_json_file)
+            if ctl_paired_end:
+                input_end_param += '-ctl_pe '
             else:
-                input_end_param = '-se '
+                input_end_param += '-ctl_se '
+        else:
+            ctl_metadata_json = None
+        
+        input_file_param = parse_exp_metadata_json(
+            exp_metadata_json, ctl_metadata_json)
 
-            if ctl_exists and exp_id in map_exp_to_ctl:
-                ctl_id = map_exp_to_ctl[exp_id]
-                ctl_metadata_json_file = '{}/{}/metadata.json'.format(
-                                    args.ctl_data_root_dir, ctl_id)
-                ctl_metadata_org_json_file = '{}/{}/metadata.org.json'.format(
-                                    args.ctl_data_root_dir, ctl_id)
-                ctl_metadata_json = parse_metadata_json_file(
-                    ctl_metadata_json_file,
-                    args.ctl_file_type if args.ctl_file_type else args.exp_file_type)
-                ctl_paired_end = is_paired_end(ctl_metadata_org_json_file)
-                if ctl_paired_end:
-                    input_end_param += '-ctl_pe '
-                else:
-                    input_end_param += '-ctl_se '
-            else:
-                ctl_metadata_json = None
-            
-            input_file_param = parse_exp_metadata_json(
-                exp_metadata_json, ctl_metadata_json)
+        sh_item = PIPELINE_SH_ITEM_TEMPLATE.format(
+            sn = sn,
+            title = exp_id,
+            species = species,
+            input_end_param = input_end_param,
+            input_file_param = input_file_param,
+            pipeline_out_root_dir = args.pipeline_out_root_dir,
+            pipeline_bds_script = args.pipeline_bds_script,
+            pipeline_extra_param = args.pipeline_extra_param)
+        sh_items.append(sh_item)
+    
+    out_sh_prefix = os.path.join(args.pipeline_out_root_dir,
+                    args.pipeline_sh_filename_prefix)
 
-            sh_item = PIPELINE_SH_ITEM_TEMPLATE.format(
-                sn = sn,
-                title = exp_id,
-                species = species,
-                input_end_param = input_end_param,
-                input_file_param = input_file_param,
-                pipeline_out_root_dir = args.pipeline_out_root_dir,
-                pipeline_bds_script = args.pipeline_bds_script)
-            fp.write('{}\n'.format(sh_item))
-
+    for i in range(math.ceil(len(sh_items)/float(args.pipeline_number_of_samples_per_sh))):
+        start = i*args.pipeline_number_of_samples_per_sh
+        end = min(len(sh_items)-1, (i+1)*args.pipeline_number_of_samples_per_sh)
+        with open('{prefix}.{start:04d}-{end:04d}.sh'.format(
+                    prefix = out_sh_prefix,
+                    start = start+1,
+                    end = end),'w') as fp:
+            fp.write('\n'.join(sh_items[start:end]))
+    
 if __name__=='__main__':
     main()
-
-'''
-cd /oak/stanford/groups/akundaje/leepc12/run/nature_paper_recompute_xcor
-python /oak/stanford/groups/akundaje/leepc12/code/ENCODE_get_ctl_from_exp/generate_pipeline_run_sh.py \
---exp-acc-ids-file /oak/stanford/groups/akundaje/leepc12/code/ENCODE_get_ctl_from_exp/exp_ids.txt \
---exp-data-root-dir /oak/stanford/groups/akundaje/leepc12/data/nature_paper_recompute_xcor/bam_exp \
---pipeline-out-root-dir . --pipeline-species hg38 --pipeline-bds-script $CODE/chipseq-pipeline/chipseq.bds \
---ctl-data-root-dir /oak/stanford/groups/akundaje/leepc12/data/nature_paper_recompute_xcor/bam_ctl \
---exp-id-to-ctl-id-file /oak/stanford/groups/akundaje/leepc12/code/ENCODE_get_ctl_from_exp/exp_ctl_ids.txt
-'''
