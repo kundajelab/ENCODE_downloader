@@ -19,10 +19,10 @@ sleep 0.5
 
 def parse_arguments():
     parser = argparse.ArgumentParser(prog='Kundaje lab pipeline BDS shell script generator',
-                        description='Generates run_pipelines.sh')
-    parser.add_argument('--exp-acc-ids-file', type=str,
+                        description='THIS PROGRAM DOES NOT SUPPORT genome hg19 and mm9!')
+    parser.add_argument('--exp-acc-ids-file', type=str, required=True,
                             help='File with experiment accession id in each line.')
-    parser.add_argument('--exp-data-root-dir', type=str,
+    parser.add_argument('--exp-data-root-dir', type=str, required=True,
                             help='Root directory where you downloaded experiment data.')
     parser.add_argument('--ctl-data-root-dir', type=str,
                             help='Root directory where you downloaded control data.')
@@ -112,17 +112,27 @@ def is_paired_end(metadata_org_json_file):
 def infer_species(metadata_org_json_file):
     with open(metadata_org_json_file,'r') as fp:
         json_obj = json.load(fp)
-    for assembly in json_obj['assembly']:
-        if assembly=='GRCh38' or assembly=='hg38': return 'hg38'
-        if assembly=='hg19': return 'hg19'
-        if assembly=='GRCm38' or assembly=='mm10': return 'mm10'
-        if assembly=='mm9': return 'mm9'
+    assembly = json_obj['assembly']
+    if 'GRCh38' in assembly: return 'hg38'
+    if 'hg19' in assembly: return 'hg19'
+    if 'GRCm38' in assembly or 'mm10' in assembly: return 'mm10'
+    if 'mm9' in assembly: return 'mm9'
     if deep_search(json_obj, 'Homo sapiens'):
         return 'hg38'
     if deep_search(json_obj, 'Mus Musculus'):
         return 'mm10'
     raise Exception('could not find/infer species from {}'.format(
         metadata_org_json_file))
+
+def get_contributing_file_acc_ids(metadata_org_json_file):
+    with open(metadata_org_json_file,'r') as fp:
+        json_obj = json.load(fp)
+    result = []
+    # convert /files/[file_acc_id]/ to [file_acc_id]
+    for s in json_obj['contributing_files']:
+        result.append(s.split('/files/')[1].strip('/'))
+    # print(result)
+    return result
 
 def deep_search(json, s, help_str='root',debug=False):
     ret = False
@@ -166,7 +176,7 @@ def parse_metadata_json_file(json_file, file_type_to_run_pipeline):
         bio_rep_id_pairs[(bio_rep_id,pair)] += 1
         fastq_merge_id[file_acc_id] = bio_rep_id_pairs[(bio_rep_id,pair)]
 
-        print(file_type, output_type, bio_rep_id, pair, paired_with, rel_file)
+        # print(file_type, output_type, bio_rep_id, pair, paired_with, rel_file)
 
     # sort bio_rep_ids
     cnt = 0
@@ -191,22 +201,25 @@ def parse_metadata_json_file(json_file, file_type_to_run_pipeline):
                 = parse_file_acc_json(files[paired_with])
             (file_acc_id,paired_with)
             new_bio_rep_id2 = map_bio_rep_id_to_serial_bio_rep_id[bio_rep_id2]
-            result.append((file_type2, output_type2,
+            result.append((paired_with, file_type2, output_type2,
                 new_bio_rep_id2, pair2, merge_id, paired_with2, rel_file2))
         else: # fastq se or other file_type
             merge_id = 1
 
         new_bio_rep_id = map_bio_rep_id_to_serial_bio_rep_id[bio_rep_id]
-        result.append((file_type, output_type, 
+        result.append((file_acc_id, file_type, output_type, 
             new_bio_rep_id, pair, merge_id, paired_with, rel_file))
     return result
 
-def parse_exp_metadata_json(exp, ctl):
+def parse_exp_metadata_json(exp, ctls, contributing_file_acc_ids):
     input_file_param = ''
 
-    for (file_type, output_type, bio_rep_id, pair, merge_id,
+    print("exps:")
+    for (file_acc_id, file_type, output_type, bio_rep_id, pair, merge_id,
         paired_with, rel_file) in exp:
 
+        print(file_acc_id, file_type, output_type, bio_rep_id, pair, merge_id,
+            paired_with, rel_file)
         if file_type=='fastq':
             input_file_param += '-fastq{}_{}{} {} \\\n'.format(
                 bio_rep_id,
@@ -227,30 +240,51 @@ def parse_exp_metadata_json(exp, ctl):
         else:
             Exception('fastq and bam input only!')
 
-    if ctl:
-        for (file_type, output_type, bio_rep_id, merge_id,
-            pair, paired_with, rel_file) in ctl:
+    if ctls: # if there is control
+        print("ctls:")
+        cnt=0
+        for ctl in ctls:
+            for (file_acc_id, file_type, output_type, bio_rep_id, merge_id,
+                pair, paired_with, rel_file) in ctl:
+                if not file_acc_id in contributing_file_acc_ids:
+                    continue
+                cnt+=1
+        if cnt==0: 
+            # if corresponding control file_acc_id not found
+            # then force to use 1st control set 
+            skip_checking_file_acc_id = True
+        else:
+            skip_checking_file_acc_id = False
 
-            if file_type=='fastq':
-                input_file_param += '-ctl_fastq{}_{}{} {} \\\n'.format(
-                    bio_rep_id,
-                    pair if paired_with else 1,
-                    ':{}'.format(merge_id) if merge_id>1 else '',
-                    rel_file)
-            elif file_type=='bam' \
-                and output_type=='alignments':
-                input_file_param += '-ctl_filt_bam{} {} \\\n'.format(
-                    bio_rep_id,                
-                    rel_file)
+        for ctl in ctls:
+            for (file_acc_id, file_type, output_type, bio_rep_id, merge_id,
+                pair, paired_with, rel_file) in ctl:                
+                if not skip_checking_file_acc_id and not file_acc_id in contributing_file_acc_ids:
+                    continue
+                print(file_acc_id, file_type, output_type, bio_rep_id, pair, merge_id,
+                    paired_with, rel_file)
 
-            elif file_type=='bam' \
-                and output_type=='unfiltered alignments':
-                input_file_param += '-ctl_bam{} {} \\\n'.format(
-                    bio_rep_id,                
-                    rel_file)                
-            else:
-                Exception('fastq and bam input only!')
+                if file_type=='fastq':
+                    input_file_param += '-ctl_fastq{}_{}{} {} \\\n'.format(
+                        bio_rep_id,
+                        pair if paired_with else 1,
+                        ':{}'.format(merge_id) if merge_id>1 else '',
+                        rel_file)
+                elif file_type=='bam' \
+                    and output_type=='alignments':
+                    input_file_param += '-ctl_filt_bam{} {} \\\n'.format(
+                        bio_rep_id,                
+                        rel_file)
 
+                elif file_type=='bam' \
+                    and output_type=='unfiltered alignments':
+                    input_file_param += '-ctl_bam{} {} \\\n'.format(
+                        bio_rep_id,                
+                        rel_file)                
+                else:
+                    Exception('fastq and bam input only!')
+            if skip_checking_file_acc_id:
+                break
     return input_file_param.strip()
 
 def main():
@@ -285,25 +319,29 @@ def main():
         else:
             input_end_param = '-se '
 
+        ctl_metadata_jsons = []
         if ctl_exists and exp_id in map_exp_to_ctl:
-            ctl_id = map_exp_to_ctl[exp_id]
-            ctl_metadata_json_file = '{}/{}/metadata.json'.format(
-                                args.ctl_data_root_dir, ctl_id)
-            ctl_metadata_org_json_file = '{}/{}/metadata.org.json'.format(
-                                args.ctl_data_root_dir, ctl_id)
-            ctl_metadata_json = parse_metadata_json_file(
-                ctl_metadata_json_file,
-                args.ctl_file_type if args.ctl_file_type else args.exp_file_type)
-            ctl_paired_end = is_paired_end(ctl_metadata_org_json_file)
-            if ctl_paired_end:
-                input_end_param += '-ctl_pe '
-            else:
-                input_end_param += '-ctl_se '
+            for ctl_id in map_exp_to_ctl[exp_id].split(','):
+                ctl_metadata_json_file = '{}/{}/metadata.json'.format(
+                                    args.ctl_data_root_dir, ctl_id)
+                ctl_metadata_org_json_file = '{}/{}/metadata.org.json'.format(
+                                    args.ctl_data_root_dir, ctl_id)
+                ctl_metadata_json = parse_metadata_json_file(
+                    ctl_metadata_json_file,
+                    args.ctl_file_type if args.ctl_file_type else args.exp_file_type)
+                ctl_paired_end = is_paired_end(ctl_metadata_org_json_file)
+                if ctl_paired_end:
+                    input_end_param += '-ctl_pe '
+                else:
+                    input_end_param += '-ctl_se '
+                contributing_file_acc_ids = get_contributing_file_acc_ids(exp_metadata_org_json_file)
+                ctl_metadata_jsons.append(ctl_metadata_json)
         else:
             ctl_metadata_json = None
+            contributing_file_acc_ids = []
         
         input_file_param = parse_exp_metadata_json(
-            exp_metadata_json, ctl_metadata_json)
+            exp_metadata_json, ctl_metadata_jsons, contributing_file_acc_ids)
 
         sh_item = PIPELINE_SH_ITEM_TEMPLATE.format(
             sn = sn,
@@ -318,10 +356,10 @@ def main():
     
     out_sh_prefix = os.path.join(args.pipeline_out_root_dir,
                     args.pipeline_sh_filename_prefix)
-
-    for i in range(math.ceil(len(sh_items)/float(args.pipeline_number_of_samples_per_sh))):
+    for i in range(int(math.ceil(len(sh_items)/float(args.pipeline_number_of_samples_per_sh)))):
         start = i*args.pipeline_number_of_samples_per_sh
-        end = min(len(sh_items)-1, (i+1)*args.pipeline_number_of_samples_per_sh)
+        end = min(len(sh_items), (i+1)*args.pipeline_number_of_samples_per_sh)
+        print(start, end)
         with open('{prefix}.{start:04d}-{end:04d}.sh'.format(
                     prefix = out_sh_prefix,
                     start = start+1,

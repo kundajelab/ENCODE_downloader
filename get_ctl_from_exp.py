@@ -14,7 +14,7 @@ def parse_arguments():
     parser = argparse.ArgumentParser(prog='exp_id.txt (exp_id) -> \
                         exp_to_ctl.txt (exp_id\\tctl_id)',
                         description='')
-    parser.add_argument('--exp-acc-ids-file', type=str,
+    parser.add_argument('--exp-acc-ids-file', type=str, required=True,
                             help='File with experiment accession id in each line.')
     parser.add_argument('--out-filename-exp-to-ctl', type=str, default='exp_to_ctl.txt',
                             help='exp_to_ctl.txt')
@@ -39,13 +39,16 @@ def get_ctl_acc_id_from_exp_acc_id(exp_acc_id):
             QUERY_URL_TEMPLATE.format(exp_acc_id),
             json_file))
         json_obj = json.load(open(json_file,'r'))
-        ctl = json_obj["possible_controls"][0]["@id"]
-        ctl_acc_id = ctl.split('/')[2]
+        ctl_acc_ids = []
+        for possible_control in json_obj["possible_controls"]:
+            ctl = possible_control["@id"]
+            ctl_acc_id = ctl.split('/')[2]
+            ctl_acc_ids.append(ctl_acc_id)
         rm_f(json_file)
     except:
         rm_f(json_file)
         return 'NO_PERMISSION'
-    return ctl_acc_id
+    return ctl_acc_ids
 
 def rm_f(files):
     if files:
@@ -89,12 +92,12 @@ def main():
     args = parse_arguments()
     exp_acc_ids = read_acc_ids(args.exp_acc_ids_file)
 
-    ctl_acc_ids = collections.defaultdict(int)
+    ctl_acc_ids = set()
     with open(args.out_filename_exp_to_ctl,'w') as fp:
         for exp_acc_id in exp_acc_ids:
             ctl_acc_id = get_ctl_acc_id_from_exp_acc_id(exp_acc_id)
-            fp.write('{}\t{}\n'.format(exp_acc_id, ctl_acc_id))
-            ctl_acc_ids[ctl_acc_id] += 1
+            fp.write('{}\t{}\n'.format(exp_acc_id, ','.join(ctl_acc_id)))
+            ctl_acc_ids.update(ctl_acc_id)
 
     with open(args.out_filename_ctl,'w') as fp:
         for ctl_acc_id in ctl_acc_ids:
