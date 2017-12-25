@@ -7,13 +7,13 @@ import argparse
 import math
 import collections
 
-PIPELINE_SH_ITEM_TEMPLATE = '''
+PIPELINE_SH_ITEM_TEMPLATE = '''#!/bin/bash
 # SN={sn}
 TITLE={title}
 WORKDIR={pipeline_out_root_dir}/{title}; mkdir -p $WORKDIR; cd $WORKDIR
-bds_scr {title} {pipeline_bds_script} -title {title} -species {species} \\
+{bds} {pipeline_bds_script} -title {title} -species {species} \\
 {input_file_param}
-{input_end_param} {pipeline_extra_param}
+-nth {pipeline_nth_per_sample} {input_end_param} {pipeline_extra_param}
 sleep 0.5
 '''
 
@@ -46,6 +46,20 @@ def parse_arguments():
                             help='Pipeline output root directory.')
     parser.add_argument('--pipeline-sh-filename-prefix', type=str, default="run_pipelines",
                             help='Prefix of path for .sh')
+    parser.add_argument('--pipeline-cluster-engine', type=str, choices=['slurm','sge','local'], required=True,
+                            help='Prefix of path for .sh')
+    parser.add_argument('--pipeline-cluster-engine-slurm-partition', type=str,
+                            help='Partition for SLURM.')
+    parser.add_argument('--pipeline-cluster-engine-sge-queue', type=str,
+                            help='Queue for SGE.')
+    parser.add_argument('--pipeline-cluster-engine-sge-pe', type=str, default='shm',
+                            help='Parallel environment for SGE.')
+    parser.add_argument('--pipeline-nth-per-sample', type=int, default=3,
+                            help='Number of threads per sample.')
+    parser.add_argument('--pipeline-mem-per-sample', type=int, default=40,
+                            help='Memory limit in GB per sample.')
+    parser.add_argument('--pipeline-walltime-per-sample', type=int, default=47,
+                            help='Walltime in hours per sample.')
     parser.add_argument('--pipeline-number-of-samples-per-sh', type=int, default=50,
                             help='Number of samples per .sh.')
     args = parser.parse_args()
@@ -53,6 +67,8 @@ def parse_arguments():
     if args.ctl_data_root_dir and not args.exp_id_to_ctl_id_file or \
         not args.ctl_data_root_dir and args.exp_id_to_ctl_id_file:
         raise Exception('--ctl-data-root-dir and --exp-id-to-ctl-id-file must be defined together.')
+    if args.pipeline_nth_per_sample<1:
+        raise Exception('--pipeline-nth-per-sample must be >0.')
     args.pipeline_out_root_dir = os.path.abspath(args.pipeline_out_root_dir)
     ctl_exists = args.ctl_data_root_dir!=None
     return args, ctl_exists
@@ -344,27 +360,73 @@ def main():
             exp_metadata_json, ctl_metadata_jsons, contributing_file_acc_ids)
 
         sh_item = PIPELINE_SH_ITEM_TEMPLATE.format(
-            sn = sn,
+            sn = sn,            
             title = exp_id,
+            bds = 'bds_scr {}'.format(exp_id) if args.pipeline_cluster_engine=='local' else 'bds',
             species = species,
             input_end_param = input_end_param,
             input_file_param = input_file_param,
             pipeline_out_root_dir = args.pipeline_out_root_dir,
             pipeline_bds_script = args.pipeline_bds_script,
-            pipeline_extra_param = args.pipeline_extra_param)
-        sh_items.append(sh_item)
+            pipeline_nth_per_sample = args.pipeline_nth_per_sample,
+            pipeline_extra_param = '-system local ' + args.pipeline_extra_param)
+        sh_items.append((exp_id, sh_item))
     
-    out_sh_prefix = os.path.join(args.pipeline_out_root_dir,
+    master_sh_prefix = os.path.join(args.pipeline_out_root_dir,
                     args.pipeline_sh_filename_prefix)
     for i in range(int(math.ceil(len(sh_items)/float(args.pipeline_number_of_samples_per_sh)))):
         start = i*args.pipeline_number_of_samples_per_sh
         end = min(len(sh_items), (i+1)*args.pipeline_number_of_samples_per_sh)
-        print(start, end)
+        lines_in_master_sh = ''
+        # write sh for individual sample
+        for j in range(start,end):
+            exp_id, sh_item = sh_items[j]
+            sample_sh_prefix = os.path.join(args.pipeline_out_root_dir, format(exp_id))
+            sample_sh = '{}.sh'.format(sample_sh_prefix)
+            with open(sample_sh,'w') as fp:
+                fp.write(sh_item)
+            sample_out_dir = os.path.join(args.pipeline_out_root_dir, exp_id)
+            mkdir_p(sample_out_dir)
+            o = os.path.join(sample_out_dir, 'out.log')
+            e = o
+            lines_in_master_sh += 'echo "SN={} EXP_ID={}"\n'.format(j+1,exp_id)
+            if args.pipeline_cluster_engine=='slurm':
+                line = 'sbatch -J {} -o {} -e {} --export=ALL -n 1 --ntasks-per-node=1 --cpus-per-task={} '
+                line += '--mem {}G -t {} -p {} {}'
+                line = line.format(
+                    exp_id,
+                    o,
+                    e,                    
+                    args.pipeline_nth_per_sample,
+                    int(args.pipeline_mem_per_sample), # GB
+                    args.pipeline_walltime_per_sample*60, # hours
+                    args.pipeline_cluster_engine_slurm_partition,
+                    sample_sh)
+            elif args.pipeline_cluster_engine=='sge':
+                line = 'qsub -o {} -e {} -V -pe {} {} '
+                line += '-l h_vmem={}G,s_vmem={}G,h_rt={}:00:00,s_rt={}:00:00 -q {} {}'
+                line = line.format(
+                    o,
+                    e,
+                    args.pipeline_cluster_engine_sge_pe,
+                    args.pipeline_nth_per_sample,
+                    args.pipeline_mem_per_sample,
+                    args.pipeline_mem_per_sample,
+                    args.pipeline_walltime_per_sample,
+                    args.pipeline_walltime_per_sample,
+                    args.pipeline_cluster_engine_sge_queue,
+                    sample_sh)
+            else:
+                line = 'bash {}'.format(sample_sh)
+            lines_in_master_sh += '{}\nsleep 5\n\n'.format(line)
+
+        # write master runner sh for group of sample .sh
         with open('{prefix}.{start:04d}-{end:04d}.sh'.format(
-                    prefix = out_sh_prefix,
+                    prefix = master_sh_prefix,
                     start = start+1,
                     end = end),'w') as fp:
-            fp.write('\n'.join(sh_items[start:end]))
+            fp.write(lines_in_master_sh)
+            # fp.write('\n'.join(sh_items[start:end]))
     
 if __name__=='__main__':
     main()
