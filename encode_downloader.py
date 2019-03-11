@@ -230,6 +230,7 @@ def main():
             #     search_file = requests.get(ENCODE_BASE_URL+org_f+'?format=json',headers=HEADERS,auth=encode_auth)
             # else:
             #     search_file = requests.get(ENCODE_BASE_URL+org_f+'?format=json',headers=HEADERS)
+            retry_cnt = 0
             while True:
                 try:
                     if args.encode_access_key_id: # if ENCODE key is given
