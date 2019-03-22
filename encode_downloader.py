@@ -44,7 +44,7 @@ def parse_arguments():
                             Supported file_format: fastq, bam, bed, bigWig, bigBed. \
                             Output file_format: alignments, unfiltered alignments, ... \
                             For details, checkout ENCODE portal\'s schema. \
-                            e.g. --file-types fastq "bam:unfiltered alignments".')
+                            e.g. --file-types fastq "bam:unfiltered alignments" "bam:alignments".')
     parser.add_argument('--assemblies', nargs='+', default=['all'], type=str,
                             help='Assemblies (reference used for mapping) allowed. e.g. --assemblies GRCh38 hg19.')
     parser.add_argument('--encode-access-key-id', type=str,
@@ -258,7 +258,8 @@ def main():
             else:
                 file_type = arr[0]
                 file_format = file_type                
-            output_type = f['output_type'].lower().replace(' ','_')
+            output_type = f['output_type'].lower() #.replace(' ','_')
+            print(file_type, file_format, output_type)
             valid = ('all' in args.file_types)
             for ft in args.file_types:
                 arr = ft.split(':')
@@ -299,7 +300,7 @@ def main():
                 tech_rep_id=tech_rep_id            
             if args.pooled_rep_only and type(bio_rep_id)==list and len(bio_rep_id)<2:
                 continue
-            # print file_accession_id, file_assembly, file_type, file_format, output_type, bio_rep_id, tech_rep_id, pair
+            # print(file_accession_id, file_assembly, file_type, file_format, output_type, bio_rep_id, tech_rep_id, pair)
             if file_type == 'fastq':
                 # if tech_rep_id != '1' and tech_rep_id != 1: break;
                 pass
