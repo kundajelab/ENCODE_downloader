@@ -81,6 +81,10 @@ def parse_arguments():
     # make file_types lowercase
     for i, file_type in enumerate(args.file_types):
         args.file_types[i] = file_type.lower()
+    # convert hg38->GRCh38
+    for i, assembly in enumerate(args.assemblies):
+        if assembly == 'hg38':
+            args.assemblies[i] = 'GRCh38'
     return args
 
 def is_encode_url( url ):
@@ -259,7 +263,6 @@ def main():
                 file_type = arr[0]
                 file_format = file_type                
             output_type = f['output_type'].lower() #.replace(' ','_')
-            print(file_type, file_format, output_type)
             valid = ('all' in args.file_types)
             for ft in args.file_types:
                 arr = ft.split(':')
