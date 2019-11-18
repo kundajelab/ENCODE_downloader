@@ -308,7 +308,7 @@ def main():
             else:
                 if not 'all' in args.assemblies and not file_assembly in args.assemblies: continue
             # create directory for downloading
-            dir_suffix = accession_id+'/'+status+'/'+file_assembly+'/'+output_type+'/'+file_type
+            dir_suffix = accession_id+'/'+status+'/'+file_assembly+'/'+output_type.replace(' ', '_')+'/'+file_type.replace(' ', '_')
             if file_type!=file_format: dir_suffix += '/'+file_format
             # if bio_rep_id>0: dir_suffix += '/rep'+str(bio_rep_id)
             if bio_rep_id:
