@@ -218,7 +218,6 @@ def main():
                     # print('Warning: inferred assembly ({}) from keys and values in json (e.g. organism name)...'.format(assembly))
                     break
         print('assembly: {}'.format(assembly))
-        assay_title = json_data_exp['assay_title']
         if 'assay_category' in json_data_exp:        
             assay_category = json_data_exp['assay_category']
         else:
