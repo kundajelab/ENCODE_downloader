@@ -217,7 +217,6 @@ def main():
                     assembly = arr[1]
                     # print('Warning: inferred assembly ({}) from keys and values in json (e.g. organism name)...'.format(assembly))
                     break
-        print('assembly: {}'.format(assembly))
         if 'assay_category' in json_data_exp:        
             assay_category = json_data_exp['assay_category']
         else:
@@ -253,7 +252,7 @@ def main():
             f = search_file.json()
             status = f['status'].lower().replace(' ','_')
             if status=='error': continue
-            file_assembly = f['assembly'] if 'assembly'in f else ''
+            file_assembly = f['assembly'] if 'assembly' in f else ''
             arr = f['file_type'].lower().split(' ')
             if len(arr)>1:
                 file_type = arr[0]
