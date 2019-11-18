@@ -20,6 +20,8 @@ sleep 0.5
 def parse_arguments():
     parser = argparse.ArgumentParser(prog='Kundaje lab pipeline BDS shell script generator',
                         description='THIS PROGRAM DOES NOT SUPPORT genome hg19 and mm9!')
+    parser.add_argument('--species',
+                            help='-species for BDS pipeline. If not set, this will be infered from a metadata JSON.')
     parser.add_argument('--exp-acc-ids-file', type=str, required=True,
                             help='File with experiment accession id in each line.')
     parser.add_argument('--exp-data-root-dir', type=str, required=True,
@@ -260,8 +262,8 @@ def parse_exp_metadata_json(exp, ctls, contributing_file_acc_ids):
         print("ctls:")
         cnt=0
         for ctl in ctls:
-            for (file_acc_id, file_type, output_type, bio_rep_id, merge_id,
-                pair, paired_with, rel_file) in ctl:
+            for (file_acc_id, file_type, output_type, bio_rep_id, pair, merge_id,
+                paired_with, rel_file) in ctl:
                 if not file_acc_id in contributing_file_acc_ids:
                     continue
                 cnt+=1
@@ -273,8 +275,8 @@ def parse_exp_metadata_json(exp, ctls, contributing_file_acc_ids):
             skip_checking_file_acc_id = False
 
         for ctl in ctls:
-            for (file_acc_id, file_type, output_type, bio_rep_id, merge_id,
-                pair, paired_with, rel_file) in ctl:                
+            for (file_acc_id, file_type, output_type, bio_rep_id, pair, merge_id,
+                paired_with, rel_file) in ctl:
                 if not skip_checking_file_acc_id and not file_acc_id in contributing_file_acc_ids:
                     continue
                 print(file_acc_id, file_type, output_type, bio_rep_id, pair, merge_id,
@@ -289,13 +291,13 @@ def parse_exp_metadata_json(exp, ctls, contributing_file_acc_ids):
                 elif file_type=='bam' \
                     and output_type=='alignments':
                     input_file_param += '-ctl_filt_bam{} {} \\\n'.format(
-                        bio_rep_id,                
+                        bio_rep_id,
                         rel_file)
 
                 elif file_type=='bam' \
                     and output_type=='unfiltered alignments':
                     input_file_param += '-ctl_bam{} {} \\\n'.format(
-                        bio_rep_id,                
+                        bio_rep_id,
                         rel_file)                
                 else:
                     Exception('fastq and bam input only!')
@@ -327,7 +329,10 @@ def main():
             exp_metadata_json_file,
             args.exp_file_type)
 
-        species = infer_species(exp_metadata_org_json_file)
+        if args.species:
+            species = args.species
+        else:
+            species = infer_species(exp_metadata_org_json_file)
 
         exp_paired_end = is_paired_end(exp_metadata_org_json_file)
         if exp_paired_end:
